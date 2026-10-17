@@ -28,7 +28,7 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(console_lines(c("money"), "number", 5000, "add"), ["gold 5000"])
         self.assertEqual(console_lines(c("money"), "number", 5000),
                          ["effect add_gold = { value = 5000 subtract = gold }"])
-        self.assertEqual(console_lines(c("age"), "number", 30), ["age 30"])
+        self.assertEqual(console_lines(c("age"), "number", 30), ["effect set_age = 30"])
         self.assertEqual(console_lines(c("influence"), "number", 50, "add"), ["add_influence 50"])
         self.assertEqual(console_lines(c("treasury"), "number", 50, "add"), ["change_treasury 50"])
 

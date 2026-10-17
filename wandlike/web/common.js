@@ -13,6 +13,7 @@ const ICONS = {
   refresh: '<path d="M20 11a8 8 0 0 0-14-4M4 4v4h4M4 13a8 8 0 0 0 14 4M20 20v-4h-4"/>', x: '<path d="M6 6l12 12M18 6 6 18"/>',
   log: '<path d="M4 6h16M4 12h16M4 18h10"/>', folder: '<path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   down: '<path d="M12 4v12m0 0-5-5m5 5 5-5M5 20h14"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>', unlink: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7M4 4l16 16"/>',
   bug: '<rect x="8" y="8" width="8" height="12" rx="4"/><path d="M9 5l1.5 2M15 5l-1.5 2M4 12h4M16 12h4M4 18l4-2M20 18l-4-2M4 6l4 3M20 6l-4 3"/>',
 };
 const icon = (n) => `<svg viewBox="0 0 24 24">${ICONS[n] || ''}</svg>`;
@@ -118,7 +119,8 @@ function cheatRow(g, c, ctx) {
     const ok = h('button', { class: 'apply', title: 'Apply', html: icon('check') });
     const apply = async () => {
       const raw = +input.value; if (Number.isNaN(raw)) return toast(`${c.label}: not a number`);
-      const v = await call('set_number', g.id, c.id, raw, c.mode); input.value = fmt(v);
+      const r = await call('set_number', g.id, c.id, raw, c.mode); input.value = fmt(r.value);
+      if (!r.ok) return toast(c.label + ': hook the game first (press Hook)');
       ok.classList.add('done'); setTimeout(() => ok.classList.remove('done'), 900);
     };
     ok.onclick = apply; input.onkeydown = (e) => { if (e.key === 'Enter') apply(); e.stopPropagation(); };
@@ -126,7 +128,7 @@ function cheatRow(g, c, ctx) {
   } else if (c.kind === 'toggle') {
     const off = h('button', { 'data-v': '0' }, 'Off'), on = h('button', { 'data-v': '1' }, 'On');
     const seg = h('div', { class: 'seg', 'data-seg': c.id }, off, on);
-    const set = async (v) => { if (!c.available) return toast(c.unsupported || 'Not available'); await call('set_toggle', g.id, c.id, v); paintSeg(seg, v); };
+    const set = async (v) => { if (!c.available) return toast(c.unsupported || 'Not available'); const ok = await call('set_toggle', g.id, c.id, v); paintSeg(seg, ok); if (v && !ok) toast(c.label + ': hook the game first (press Hook)'); };
     off.onclick = () => set(false); on.onclick = () => set(true);
     paintSeg(seg, !!(ctx.st().toggles[g.id] || {})[c.id]);
     row.append(seg);

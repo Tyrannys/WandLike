@@ -10,7 +10,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-os.environ.setdefault("APPDATA", str(ROOT / "build" / "dev-appdata"))  # keep dev settings out of the real profile
+# Always override (setdefault did nothing because APPDATA is already set): dev runs must never touch the real profile.
+os.environ["APPDATA"] = str(ROOT / "build" / "dev-appdata")
 Path(os.environ["APPDATA"]).mkdir(parents=True, exist_ok=True)
 
 from wandlike.app.api import Api  # noqa: E402

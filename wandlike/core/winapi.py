@@ -63,7 +63,8 @@ def find_pids(exe_name: str) -> list[int]:
     return pids
 
 
-def module_base(pid: int, module: str) -> int | None:
+def module_range(pid: int, module: str) -> tuple[int, int] | None:
+    """(base address, size in bytes) of a loaded module, or None."""
     snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid)
     if snap in (None, INVALID_HANDLE):
         return None
@@ -73,11 +74,16 @@ def module_base(pid: int, module: str) -> int | None:
         ok = kernel32.Module32FirstW(snap, ctypes.byref(entry))
         while ok:
             if entry.szModule.lower() == module.lower():
-                return int(entry.modBaseAddr or 0)
+                return int(entry.modBaseAddr or 0), int(entry.modBaseSize)
             ok = kernel32.Module32NextW(snap, ctypes.byref(entry))
     finally:
         kernel32.CloseHandle(snap)
     return None
+
+
+def module_base(pid: int, module: str) -> int | None:
+    r = module_range(pid, module)
+    return r[0] if r else None
 
 
 # ------------------------------------------------------------------ windows

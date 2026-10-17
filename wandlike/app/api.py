@@ -19,7 +19,8 @@ from ..core.plugin import Cheat, Game, load_all, user_games_dir
 from ..core.settings import Settings
 
 DEFAULT_APP = {"autoupdate": True, "start_with_windows": False, "overlay_hotkey": "Ctrl+Shift+F10",
-               "hotkeys_enabled": True, "console_mode": "key", "accent": "teal", "catalog_sync": True}
+               "hotkeys_enabled": True, "console_mode": "key", "accent": "teal", "catalog_sync": True,
+               "auto_hook": True}
 CATALOG_EVERY = 6 * 3600   # seconds between routine catalog syncs (an unchanged index is a cheap 304)
 RESCAN_EVERY = 90          # seconds between cached library rescans (stat calls only)
 
@@ -146,6 +147,7 @@ class Api:
                 "applied": self._applied, "log": list(self._log)[-60:], "update": self._update,
                 "progress": self._progress, "hk_errors": dict(self._hk_errors),
                 "overlay": self._overlay_visible, "active": self._active, "rev": self._rev,
+                "hooked": {gid: e.hooked for gid, e in self._engines.items()},
                 "catalog": {"status": self._catalog.status, "last_sync": self._catalog.last_sync},
                 "library": {"count": len(self._detected), "scanned_at": self._library.scanned_at}}
 
@@ -153,13 +155,14 @@ class Api:
     def set_number(self, gid: str, cid: str, value: float, mode: str = "set"):
         c = self._cheat(gid, cid)
         value = max(c.min, min(c.max, float(value)))
-        self._engine(gid).apply_number(c, value, mode)
-        self._applied.setdefault(gid, {})[cid] = [value, mode]
+        ok = self._engine(gid).apply_number(c, value, mode)
         d = self._g(gid)
         d.setdefault("values", {})[cid] = value
         d.setdefault("modes", {})[cid] = mode
         self._settings.set(f"g.{gid}", d)
-        return value
+        if ok:
+            self._applied.setdefault(gid, {})[cid] = [value, mode]
+        return {"value": value, "ok": ok}
 
     def remember_value(self, gid: str, cid: str, value: float, mode: str = "set"):
         d = self._g(gid)
@@ -171,8 +174,7 @@ class Api:
         c = self._cheat(gid, cid)
         if not c.available:
             return False
-        self._engine(gid).set_toggle(c, bool(on))
-        return bool(on)
+        return self._engine(gid).set_toggle(c, bool(on)) and bool(on)
 
     def press(self, gid: str, cid: str):
         self._engine(gid).press(self._cheat(gid, cid))
@@ -264,6 +266,28 @@ class Api:
         eng.launch(self._lib(self._games[gid]))
         self._gset(gid, last_played=int(time.time()))
         return "launching"
+
+    # --------------------------------------------------------------- hooking
+    def hook(self, gid: str) -> dict:
+        """Attach to the running game. {ok, error, info}; refuses cleanly if the game is not running."""
+        from ..core.hook import HookError
+        try:
+            return {"ok": True, "info": self._engine(gid).hook_attach()}
+        except HookError as e:
+            self._say(f"! {e}")
+            return {"ok": False, "error": str(e)}
+
+    def unhook(self, gid: str) -> dict:
+        self._engine(gid).hook_detach()
+        return {"ok": True}
+
+    def hook_info(self, gid: str) -> dict:
+        return self._engine(gid).hook.info()
+
+    def _auto_hook(self, gid: str):
+        time.sleep(4)  # let the game finish creating its window and mapping its code
+        if self._running.get(gid) and not self._engine(gid).hooked:
+            self.hook(gid)
 
     # ------------------------------------------------- library + game catalog
     def _reload_games(self):
@@ -455,12 +479,15 @@ class Api:
                 if now and not was:
                     self._gset(gid, last_played=int(time.time()))
                     self._say(f"{g.name} detected")
+                    if self.app()["auto_hook"] and g.hook.get("symbols"):
+                        threading.Thread(target=self._auto_hook, args=(gid,), daemon=True).start()
                     if self._g(gid).get("auto_apply") and self._g(gid).get("preset"):
                         threading.Thread(target=self._auto_apply, args=(gid,), daemon=True).start()
                 elif was and not now:
                     self._say(f"{g.name} closed")
                     if gid in self._engines:
                         self._engines[gid].toggles.clear()
+                        self._engines[gid].hook.detach()
                     self._applied[gid] = {}
             time.sleep(2)
 

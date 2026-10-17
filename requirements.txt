@@ -1,0 +1,2 @@
+# Needed to run WandLike from source (python -m wandlike). Windows only.
+pywebview>=5.0

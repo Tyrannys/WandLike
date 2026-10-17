@@ -36,8 +36,8 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(any(c["id"] == "treasury" for c in g["cheats"]))
 
     def test_number_clamped_and_logged(self):
-        v = self.api.set_number("ck3", "dread", 500, "set")
-        self.assertEqual(v, 100)
+        r = self.api.set_number("ck3", "dread", 500, "set")
+        self.assertEqual(r, {"value": 100, "ok": True})
 
     def test_unsupported_toggle_refused(self):
         self.assertFalse(self.api.set_toggle("ck3", "freeze_time", True))

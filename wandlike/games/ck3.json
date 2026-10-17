@@ -4,10 +4,16 @@
   "exe": "ck3.exe",
   "window_title": "Crusader Kings III",
   "steam_appid": 1158310,
-  "version": 1,
+  "version": 3,
+  "min_app": "1.2.0",
   "match": {"steam_appid": 1158310},
+  "hook": {"symbols": {
+    "paused": {"type": "uint8", "section": ".text",
+               "aob": "48 8B 0D ?? ?? ?? ?? 41 B8 FF FF FF FF 0F B6 51 20 E9",
+               "rip": {"disp_at": 3, "insn_len": 7}, "deref": [32]}
+  }},
   "launch_args": "-debug_mode",
-  "notes": "Drives the in-game debug console (requires -debug_mode; not available in Ironman). Using the console disables achievements for that save. Verified = command documented on the CK3 wiki; inferred = built from documented script values and should be checked once in-game (press Tab in the console to autocomplete).",
+  "notes": "Drives the in-game debug console (requires -debug_mode; not available in Ironman). Using the console disables achievements for that save. Status: tested = confirmed working in CK3 1.20.1.1; parsed = accepted by the game's script parser (needs a DLC/government to observe); wiki = documented on the CK3 wiki; inferred = built from documented script values.",
   "console": {
     "toggle_scancode": 41,
     "open_delay": 0.25,
@@ -17,44 +23,44 @@
   },
   "cheats": [
     {"id": "money", "label": "Set Money", "kind": "number", "info": "Sets your gold. '+' mode adds instead (wiki-verified `gold <n>`).",
-     "set": "effect add_gold = {{ value = {value} subtract = gold }}", "add": "gold {value}", "default": 1000, "step": 1000, "verified": "inferred"},
+     "set": "effect add_gold = {{ value = {value} subtract = gold }}", "add": "gold {value}", "default": 1000, "step": 1000, "verified": "tested"},
 
     {"id": "prestige", "label": "Set Prestige", "kind": "number", "info": "Sets your prestige. '+' mode uses `add_prestige`.",
-     "set": "effect add_prestige = {{ value = {value} subtract = prestige }}", "add": "add_prestige {value}", "default": 1000, "step": 1000, "verified": "inferred"},
+     "set": "effect add_prestige = {{ value = {value} subtract = prestige }}", "add": "add_prestige {value}", "default": 1000, "step": 1000, "verified": "tested"},
 
     {"id": "piety", "label": "Set Piety", "kind": "number", "info": "Sets your piety. '+' mode uses `add_piety`.",
-     "set": "effect add_piety = {{ value = {value} subtract = piety }}", "add": "add_piety {value}", "default": 1000, "step": 1000, "verified": "inferred"},
+     "set": "effect add_piety = {{ value = {value} subtract = piety }}", "add": "add_piety {value}", "default": 1000, "step": 1000, "verified": "tested"},
 
     {"id": "renown", "label": "Set Renown", "kind": "number", "info": "Dynasty prestige (renown). '+' mode uses `dynasty_prestige`.",
-     "set": "effect dynasty = {{ add_dynasty_prestige = {{ value = {value} subtract = dynasty_prestige }} }}", "add": "dynasty_prestige {value}", "default": 1000, "step": 1000, "verified": "inferred"},
+     "set": "effect dynasty = {{ add_dynasty_prestige = {{ value = {value} subtract = dynasty_prestige }} }}", "add": "dynasty_prestige {value}", "default": 1000, "step": 1000, "verified": "tested"},
 
     {"id": "dread", "label": "Set Dread", "kind": "number", "info": "Sets your dread (0-100).",
-     "set": "set_dread {value}", "add": "add_dread {value}", "default": 50, "min": 0, "max": 100, "step": 10, "verified": "wiki"},
+     "set": "set_dread {value}", "add": "add_dread {value}", "default": 50, "min": 0, "max": 100, "step": 10, "verified": "tested"},
 
     {"id": "diplomacy", "label": "Set Diplomacy", "kind": "number", "info": "Sets your base Diplomacy skill.",
-     "set": "set_diplomacy {value}", "add": "change_diplomacy {value}", "default": 20, "min": 0, "max": 100, "step": 1, "verified": "wiki"},
+     "set": "set_diplomacy {value}", "add": "change_diplomacy {value}", "default": 20, "min": 0, "max": 100, "step": 1, "verified": "tested"},
     {"id": "martial", "label": "Set Martial", "kind": "number", "info": "Sets your base Martial skill.",
-     "set": "set_martial {value}", "add": "change_martial {value}", "default": 20, "min": 0, "max": 100, "step": 1, "verified": "wiki"},
+     "set": "set_martial {value}", "add": "change_martial {value}", "default": 20, "min": 0, "max": 100, "step": 1, "verified": "tested"},
     {"id": "stewardship", "label": "Set Stewardship", "kind": "number", "info": "Sets your base Stewardship skill.",
-     "set": "set_stewardship {value}", "add": "change_stewardship {value}", "default": 20, "min": 0, "max": 100, "step": 1, "verified": "wiki"},
+     "set": "set_stewardship {value}", "add": "change_stewardship {value}", "default": 20, "min": 0, "max": 100, "step": 1, "verified": "tested"},
     {"id": "intrigue", "label": "Set Intrigue", "kind": "number", "info": "Sets your base Intrigue skill.",
-     "set": "set_intrigue {value}", "add": "change_intrigue {value}", "default": 20, "min": 0, "max": 100, "step": 1, "verified": "wiki"},
+     "set": "set_intrigue {value}", "add": "change_intrigue {value}", "default": 20, "min": 0, "max": 100, "step": 1, "verified": "tested"},
     {"id": "learning", "label": "Set Learning", "kind": "number", "info": "Sets your base Learning skill.",
-     "set": "set_learning {value}", "add": "change_learning {value}", "default": 20, "min": 0, "max": 100, "step": 1, "verified": "wiki"},
+     "set": "set_learning {value}", "add": "change_learning {value}", "default": 20, "min": 0, "max": 100, "step": 1, "verified": "tested"},
     {"id": "prowess", "label": "Set Prowess", "kind": "number", "info": "Sets your base Prowess skill.",
-     "set": "set_prowess {value}", "add": "change_prowess {value}", "default": 20, "min": 0, "max": 100, "step": 1, "verified": "wiki"},
+     "set": "set_prowess {value}", "add": "change_prowess {value}", "default": 20, "min": 0, "max": 100, "step": 1, "verified": "tested"},
 
-    {"id": "age", "label": "Set King Age", "kind": "number", "info": "Sets your character's age in years.",
-     "set": "age {value}", "default": 30, "min": 1, "max": 120, "step": 1, "verified": "wiki"},
+    {"id": "age", "label": "Set King Age", "kind": "number", "info": "Sets your character's age in years ('+' mode ages them by that many years). Skips birthday events.",
+     "set": "effect set_age = {value}", "add": "effect change_age = {value}", "default": 30, "min": 1, "max": 120, "step": 1, "verified": "tested"},
 
     {"id": "stress", "label": "Set Stress", "kind": "number", "info": "Sets your stress points (0 removes stress).",
      "set": "set_stress {value}", "add": "add_stress {value}", "default": 0, "min": 0, "max": 500, "step": 10, "verified": "wiki"},
 
     {"id": "treasury", "label": "Set Treasury", "kind": "number", "info": "Treasury of an administrative/imperial realm. Needs the All Under Heaven DLC. '+' mode uses wiki-verified `change_treasury`.",
-     "set": "effect add_treasury = {{ value = {value} subtract = treasury }}", "add": "change_treasury {value}", "default": 1000, "step": 1000, "requires": "All Under Heaven DLC", "verified": "inferred"},
+     "set": "effect add_treasury = {{ value = {value} subtract = treasury }}", "add": "change_treasury {value}", "default": 1000, "step": 1000, "requires": "All Under Heaven DLC", "verified": "parsed"},
 
     {"id": "influence", "label": "Set Influence", "kind": "number", "info": "Influence resource. Needs the Roads to Power DLC. '+' mode uses wiki-verified `add_influence`.",
-     "set": "effect change_influence = {{ value = {value} subtract = influence }}", "add": "add_influence {value}", "default": 1000, "step": 1000, "requires": "Roads to Power DLC", "verified": "inferred"},
+     "set": "effect change_influence = {{ value = {value} subtract = influence }}", "add": "add_influence {value}", "default": 1000, "step": 1000, "requires": "Roads to Power DLC", "verified": "parsed"},
 
     {"id": "instabuild", "label": "Instant Construction", "kind": "toggle", "info": "Finishes constructions instantly and reinforces men-at-arms at once. The game's `instabuild` command is a toggle itself.",
      "on": ["instabuild"], "off": ["instabuild"], "verified": "wiki"},
@@ -66,10 +72,10 @@
      "on": ["instamove"], "off": [], "verified": "wiki"},
 
     {"id": "max_county_control", "label": "Max County Control", "kind": "toggle", "options": [{"id": "interval", "label": "Repeat every (seconds)", "type": "number", "min": 5, "max": 300, "default": 15}], "info": "Every 15 s sets control of all your counties to the maximum.",
-     "on": ["effect every_sub_realm_county = { change_county_control = 100 }"], "interval": 15, "verified": "inferred"},
+     "on": ["effect every_sub_realm_county = { change_county_control = 100 }"], "interval": 15, "verified": "parsed"},
 
-    {"id": "freeze_time", "label": "Freeze Time", "kind": "toggle", "info": "Needs the game's pause flag in memory, which can't be driven through the console. Planned for the memory backend (see games/README.md).",
-     "verified": "unsupported", "unsupported": "Needs a memory offset for the game-speed/pause flag; CK3 isn't installed here to find it."},
+    {"id": "freeze_time", "label": "Freeze Time", "kind": "toggle", "info": "Keeps the game paused, even if you press Space or click play. Needs the game to be hooked (press Hook). Event pop-ups still pause the game by themselves.",
+     "memory": {"symbol": "paused", "on": 1, "off": 0, "lock": 0.02}, "verified": "tested"},
 
     {"id": "launch_debug", "label": "Enable Console", "kind": "button", "info": "Launches CK3 through Steam with -debug_mode so the console works. Close the game first.",
      "launch": true, "verified": "wiki"}

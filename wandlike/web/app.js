@@ -78,17 +78,35 @@ const pageLibrary = () => listPage('My Games', 'Supported games installed on thi
 const pageExplore = () => listPage('Explore', 'Every game WandLike supports. Support for installed games downloads automatically from the catalog.',
   [...S.boot.games, ...(S.boot.catalog_only || []).map((c) => ({ ...c, catalog: true }))]);
 
+/* The big button: Play when the game is closed, Hook when it runs, Unhook when hooked. */
+function playState(gid) {
+  const run = !!S.st.running[gid], hooked = !!(S.st.hooked || {})[gid];
+  if (!run) return { label: 'Play', cls: '', icon: 'play', chip: 'Not running', title: 'Launch the game' };
+  if (!hooked) return { label: 'Hook', cls: '', icon: 'link', chip: 'Running \u00b7 not hooked', title: 'Attach to the running game for real-time cheats' };
+  return { label: 'Unhook', cls: ' live', icon: 'unlink', chip: 'Hooked', title: 'Detach from the game' };
+}
+async function playAction(gid) {
+  const run = !!S.st.running[gid];
+  if (!run) {   // never hook blindly: check the game is actually there first
+    const st = await call('state'); if (!st.running[gid]) return play(gid);
+  }
+  if ((S.st.hooked || {})[gid]) { await call('unhook', gid); return applyState(await call('state')); }
+  const r = await call('hook', gid);
+  if (!r.ok) toast(r.error); else toast('Hooked ' + S.game.name + (Object.keys(r.info.unresolved || {}).length ? ' (some cheats unavailable on this game version)' : ''), 'info');
+  applyState(await call('state'));
+}
+
 async function play(gid) { const r = await call('play', gid); toast(r === 'running' ? 'Already running' : 'Launching through Steam…', 'info'); }
 
 function pageGame() {
   const g = S.game, p = h('div', { class: 'page' });
   const head = h('div', { class: 'ghead' });
   art(g.id, 'hero').then((u) => { if (u) head.prepend(h('img', { class: 'bg', src: u, alt: '' })); });
-  const running = S.st.running[g.id];
-  const playBtn = h('button', { class: 'btn primary' + (running ? ' live' : ''), id: 'playbtn', onclick: () => play(g.id) },
-    h('span', { html: icon('play') }), running ? 'Playing' : 'Play');
+  const running = S.st.running[g.id], ps = playState(g.id);
+  const playBtn = h('button', { class: 'btn primary' + ps.cls, id: 'playbtn', title: ps.title, onclick: () => playAction(g.id) },
+    h('span', { html: icon(ps.icon) }), ps.label);
   head.append(h('div', { class: 'shade' }), h('div', { class: 'in' },
-    h('div', { class: 't' }, h('h1', {}, g.name), h('div', { class: 'chips' }, h('span', { class: 'chip' + (running ? ' ok' : ''), id: 'chip' }, h('i'), running ? 'Game running' : 'Not running'),
+    h('div', { class: 't' }, h('h1', {}, g.name), h('div', { class: 'chips' }, h('span', { class: 'chip' + (running ? ' ok' : ''), id: 'chip' }, h('i'), ps.chip),
       h('span', { class: 'chip' }, `${g.cheat_count} cheats`))),
     h('div', { class: 'actions' }, playBtn,
       h('button', { class: 'iconbtn' + (g.favorite ? ' on' : ''), title: 'Favorite', html: icon('star'), onclick: async (e) => { g.favorite = !g.favorite; await call('favorite', g.id, g.favorite); S.boot.games.find((x) => x.id === g.id).favorite = g.favorite; e.currentTarget.classList.toggle('on', g.favorite); } }),
@@ -150,6 +168,7 @@ function pageSettings() {
     row('Global hotkeys', 'Trigger cheats from inside the game with the hotkeys you assigned.', sw('hotkeys_enabled')),
     row('Overlay hotkey', 'Show or hide the in-game overlay with your pinned cheats (run the game windowed or borderless).', ovBtn),
     row('In-game console key', 'The key WandLike presses to open the game’s console. Change it if your layout needs the alternative.', consoleSel),
+    row('Hook games automatically', 'A few seconds after a game with memory cheats starts, hook it so real-time cheats like Freeze Time just work.', sw('auto_hook')),
     row('Start with Windows', 'Launch WandLike when you sign in (installed build only).', sw('start_with_windows'))));
   const updBtn = h('button', { class: 'btn sm', onclick: () => call('check_update') }, 'Check now');
   p.append(h('div', { class: 'set-card' },
@@ -190,10 +209,10 @@ function applyState(st) {
   lp.innerHTML = st.log.map((l) => `<div><span class="t">${l.t}</span><span class="${l.msg.startsWith('!') ? 'e' : ''}">${l.msg.replace(/</g, '&lt;')}</span></div>`).join('') || '<div>No activity yet.</div>';
   if (lp.classList.contains('show')) lp.scrollTop = lp.scrollHeight;
   if (S.page === 'game' && S.game) {
-    const run = !!st.running[S.game.id];
+    const run = !!st.running[S.game.id], ps = playState(S.game.id);
     const pb = document.getElementById('playbtn'), ch = document.getElementById('chip');
-    if (pb && pb.classList.contains('live') !== run) { pb.classList.toggle('live', run); pb.lastChild.textContent = run ? 'Playing' : 'Play'; }
-    if (ch) { ch.classList.toggle('ok', run); ch.lastChild.textContent = run ? 'Game running' : 'Not running'; }
+    if (pb) { pb.classList.toggle('live', ps.cls !== ''); pb.title = ps.title; pb.lastChild.textContent = ps.label; pb.firstChild.innerHTML = icon(ps.icon); }
+    if (ch) { ch.classList.toggle('ok', run); ch.lastChild.textContent = ps.chip; }
     syncToggles(document.getElementById('cheats') || document, S.game, st);
   }
   if (S.page === 'home' || S.page === 'library' || S.page === 'explore') {

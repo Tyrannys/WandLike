@@ -8,6 +8,7 @@ import threading
 import time
 from typing import Callable
 
+from .hook import Hook, HookError
 from .plugin import Cheat, Game
 
 
@@ -78,15 +79,38 @@ class Engine:
     def __init__(self, game: Game, log: Callable[[str], None] = print, dry_run: bool = False):
         self.game, self.log, self.dry_run = game, log, dry_run
         self.driver = ConsoleDriver(game, log, dry_run)
+        self.hook = Hook(game, log, dry_run)
         self.toggles: dict[str, bool] = {}
         self.opts: dict[str, dict] = {}
         self._last: dict[str, float] = {}
+        self._lock_last: dict[str, float] = {}
         self._q: queue.Queue = queue.Queue()
         self._stop = threading.Event()
         threading.Thread(target=self._worker, daemon=True).start()
         threading.Thread(target=self._repeater, daemon=True).start()
+        threading.Thread(target=self._locker, daemon=True).start()
 
     # ------------------------------------------------------------ status
+    @property
+    def hooked(self) -> bool:
+        return self.hook.attached
+
+    def hook_attach(self) -> dict:
+        """Hook the game after checking it is actually running. Raises HookError with a readable reason."""
+        if not self.running():
+            raise HookError(f"{self.game.name} is not running")
+        return self.hook.attach()
+
+    def hook_detach(self) -> None:
+        """Unhook: stop locks, put locked values back to their off state, then release the process."""
+        for c in self.game.cheats:
+            if c.memory and self.toggles.pop(c.id, False) and c.kind == "toggle" and "off" in c.memory:
+                try:
+                    self.hook.write(c.memory, c.memory["off"])
+                except Exception:
+                    pass
+        self.hook.detach()
+
     def running(self) -> bool:
         if self.dry_run:
             return True
@@ -108,6 +132,21 @@ class Engine:
             return None
         return "debug_mode" in out
 
+    def _find_exe(self, install_dir: str | None):
+        """The game exe inside its install folder (top level, a bin folder, or up to 3 levels down)."""
+        from pathlib import Path
+        if not install_dir:
+            return None
+        root, want = Path(install_dir), self.game.exe.lower()
+        for sub in ("", "binaries", "bin", "bin64", "x64", "Binaries/Win64"):
+            p = root / sub / self.game.exe
+            if p.exists():
+                return p
+        for p in root.glob("*/*/*"):
+            if p.name.lower() == want:
+                return p
+        return None
+
     def launch(self, lib: dict | None = None) -> None:
         """Start the game through its store. `lib` is the detected library entry (store, id, install_dir, exe)."""
         args = self.game.launch_args
@@ -116,7 +155,15 @@ class Engine:
             self.log(f"[dry-run] launch via {store or 'unknown store'} with '{args}'")
         elif store == "steam":
             appid = (lib or {}).get("id") or self.game.steam_appid
-            os.startfile(f"steam://run/{appid}//{args}/")  # type: ignore[attr-defined]
+            direct = self._find_exe((lib or {}).get("install_dir")) if args else None
+            if direct and (direct.parent / "steam_appid.txt").exists():
+                # Starting the exe ourselves avoids Steam's "custom arguments" confirmation prompt (steam:// and
+                # -applaunch both show it). steam_appid.txt lets the game talk to the running Steam client.
+                import shlex
+                subprocess.Popen([str(direct), *shlex.split(args)], cwd=str(direct.parent))
+                self.log(f"Launching {direct.name} directly with '{args}'")
+                return
+            os.startfile(f"steam://run/{appid}//{args}/" if args else f"steam://rungameid/{appid}")  # type: ignore[attr-defined]
             self.log(f"Launching via Steam with '{args}'")
         elif store == "epic":
             os.startfile(f"com.epicgames.launcher://apps/{lib['id']}?action=launch&silent=true")  # type: ignore[attr-defined]
@@ -129,19 +176,43 @@ class Engine:
             self.log("Couldn't find this game in your libraries; launch it manually with: " + args)
 
     # ----------------------------------------------------------- actions
-    def apply_number(self, cheat: Cheat, value: float, mode: str = "set") -> None:
+    def apply_number(self, cheat: Cheat, value: float, mode: str = "set") -> bool:
+        """True if applied (console commands are queued and count as applied)."""
         if cheat.memory:
-            self._submit(lambda: self._mem_set(cheat, value))
-        else:
-            self._submit(lambda: self.driver.send(console_lines(cheat, "number", value, mode)))
+            try:
+                if mode == "add":
+                    value += self.hook.read(cheat.memory) / cheat.memory.get("scale", 1)
+                self.hook.write(cheat.memory, value)
+                self.log(f"memory {cheat.id} = {value:g}")
+                return True
+            except (HookError, Exception) as e:
+                self.log(f"! {cheat.label}: {self._why(e)}")
+                return False
+        self._submit(lambda: self.driver.send(console_lines(cheat, "number", value, mode)))
+        return True
 
-    def set_toggle(self, cheat: Cheat, on: bool) -> None:
+    def _why(self, e: Exception) -> str:
+        return "hook the game first (press Hook)" if str(e) == "not hooked" else str(e)
+
+    def set_toggle(self, cheat: Cheat, on: bool) -> bool:
+        """True if the toggle took effect (a memory toggle fails when the game is not hooked)."""
+        if cheat.memory:
+            try:
+                self.hook.write(cheat.memory, cheat.memory["on"] if on else cheat.memory.get("off", 0))
+            except Exception as e:
+                self.log(f"! {cheat.label}: {self._why(e)}")
+                self.toggles[cheat.id] = False
+                return False
+            self.toggles[cheat.id] = on
+            self._lock_last[cheat.id] = time.time()
+            return True
         self.toggles[cheat.id] = on
         if cheat.interval:
             self._last[cheat.id] = time.time()  # first repeat is one interval from now
             if not on:
-                return  # repeater stops by itself
+                return True  # repeater stops by itself
         self._submit(lambda: self.driver.send(console_lines(cheat, "on" if on else "off")))
+        return True
 
     def set_option(self, cheat: Cheat, opt_id: str, value) -> None:
         self.opts.setdefault(cheat.id, {})[opt_id] = value
@@ -151,16 +222,6 @@ class Engine:
             self.launch()
         else:
             self._submit(lambda: self.driver.send(console_lines(cheat, "press")))
-
-    def _mem_set(self, cheat: Cheat, value: float) -> None:
-        from . import winapi
-        from .memory import Process
-        pids = winapi.find_pids(self.game.exe)
-        if not pids:
-            raise RuntimeError(f"{self.game.name} is not running")
-        with Process(pids[0]) as p:
-            p.set(cheat.memory, value)
-        self.log(f"memory {cheat.id} = {value}")
 
     # ----------------------------------------------------------- workers
     def _submit(self, fn: Callable[[], None]) -> None:
@@ -185,6 +246,23 @@ class Engine:
                         last[c.id] = now
                         self._submit(lambda c=c: self.driver.send(console_lines(c, "on")))
             time.sleep(0.5)
+
+    def _locker(self) -> None:
+        """Keep memory toggles with a "lock" interval pinned (e.g. Freeze Time re-asserts the pause flag)."""
+        while not self._stop.is_set():
+            time.sleep(0.02)
+            if not self.hook.attached:
+                continue
+            now = time.time()
+            for c in self.game.cheats:
+                lock = (c.memory or {}).get("lock")
+                if lock and c.kind == "toggle" and self.toggles.get(c.id) and now - self._lock_last.get(c.id, 0) >= lock:
+                    self._lock_last[c.id] = now
+                    try:
+                        self.hook.write(c.memory, c.memory["on"])
+                    except Exception as e:
+                        self.toggles[c.id] = False
+                        self.log(f"! {c.label} stopped: {self._why(e)}")
 
     def shutdown(self) -> None:
         self._stop.set()

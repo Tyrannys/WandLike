@@ -54,6 +54,7 @@ class Game:
     cheats: list[Cheat]
     notes: str = ""
     steam_appid: int | None = None
+    hook: dict = field(default_factory=dict)   # named memory symbols found by byte pattern (see core/hook.py)
     # how the game is recognised in the user's libraries, e.g. {"steam_appid": 1158310} / {"epic": "<AppName>"} / {"gog": "<id>"}
     match: dict = field(default_factory=dict)
     version: int = 1                # bump when the plugin changes; newer versions replace older ones
@@ -87,7 +88,34 @@ def parse_game(raw: dict) -> Game:
         raise ValueError(f"unknown match keys {set(g.match) - MATCH_KEYS}")
     if len({c.id for c in g.cheats}) != len(g.cheats):
         raise ValueError("duplicate cheat ids")
+    _validate_hook(g)
     return g
+
+
+def _validate_hook(g: Game) -> None:
+    from .hook import SYMBOL_KEYS
+    from .memory import TYPES, compile_pattern
+    extra = set(g.hook) - {"symbols"}
+    if extra:
+        raise ValueError(f"unknown hook keys {sorted(extra)}")
+    symbols = g.hook.get("symbols", {})
+    for name, spec in symbols.items():
+        if not ID_RE.match(name.lower().replace("_", "-")):
+            raise ValueError(f"bad symbol name {name!r}")
+        if set(spec) - SYMBOL_KEYS:
+            raise ValueError(f"symbol {name}: unknown keys {sorted(set(spec) - SYMBOL_KEYS)}")
+        if spec.get("type", "int32") not in TYPES:
+            raise ValueError(f"symbol {name}: type must be one of {sorted(TYPES)}")
+        if "aob" in spec:
+            compile_pattern(spec["aob"])
+        elif "rva" not in spec:
+            raise ValueError(f"symbol {name}: needs an \"aob\" pattern (or an \"rva\" with \"exe_size\")")
+        if "rip" in spec and set(spec["rip"]) != {"disp_at", "insn_len"}:
+            raise ValueError(f"symbol {name}: rip needs exactly disp_at and insn_len")
+    for c in g.cheats:
+        sym = (c.memory or {}).get("symbol")
+        if sym is not None and sym not in symbols:
+            raise ValueError(f"cheat {c.id}: unknown hook symbol {sym!r}")
 
 
 def load_game(path: Path) -> Game:
