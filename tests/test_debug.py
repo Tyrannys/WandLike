@@ -21,7 +21,7 @@ class DebugTools(unittest.TestCase):
         from wandlike.core import winapi
         cls._real_find = winapi.find_pids
         cls._handlers = list(logging.getLogger().handlers)
-        cls.api = Api(dry_run=True)
+        cls.api = Api(dry_run=True, background=False)
         dbg.setup(cls.api)
 
     @classmethod
@@ -68,7 +68,7 @@ class DebugOffByDefault(unittest.TestCase):
     def test_regular_api_has_no_debug_surface(self):
         from wandlike.app.api import Api
         # a fresh Api (setup not called) must not expose debug methods or the flag
-        a = Api(dry_run=True)
+        a = Api(dry_run=True, background=False)
         self.assertFalse(a.bootstrap()["debug"])
         self.assertFalse(any(n.startswith("debug_") for n in dir(a)))
 

@@ -4,6 +4,8 @@
   "exe": "ck3.exe",
   "window_title": "Crusader Kings III",
   "steam_appid": 1158310,
+  "version": 1,
+  "match": {"steam_appid": 1158310},
   "launch_args": "-debug_mode",
   "notes": "Drives the in-game debug console (requires -debug_mode; not available in Ironman). Using the console disables achievements for that save. Verified = command documented on the CK3 wiki; inferred = built from documented script values and should be checked once in-game (press Tab in the console to autocomplete).",
   "console": {

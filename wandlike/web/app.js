@@ -9,13 +9,13 @@ async function art(gid, kind) {
   return S.art[k];
 }
 function cover(g) {
-  const card = h('button', { class: 'card', onclick: () => openGame(g.id) });
+  const card = h('button', { class: 'card', onclick: () => (g.catalog ? toast(g.installed ? 'Support for this game is listed in the catalog and will download shortly (or press Sync now in Settings).' : 'Not installed on this PC. Support downloads automatically once the game is detected.', 'info') : openGame(g.id)) });
   const ini = h('div', { class: 'initials' }, g.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 3));
   card.append(ini);
-  art(g.id, 'cover').then((u) => { if (u) { ini.remove(); card.prepend(h('img', { src: u, alt: '' })); } });
+  if (!g.catalog) art(g.id, 'cover').then((u) => { if (u) { ini.remove(); card.prepend(h('img', { src: u, alt: '' })); } });
   card.append(h('div', { class: 'shade' }));
   const run = S.st.running[g.id];
-  card.append(h('span', { class: 'badge ' + (run ? 'live' : g.installed ? '' : 'off') }, run ? '● Running' : g.installed ? 'Installed' : 'Not installed'));
+  card.append(h('span', { class: 'badge ' + (run ? 'live' : g.installed ? '' : 'off') }, run ? '● Running' : g.installed ? (g.catalog ? 'Support available' : 'Installed' + (g.store && g.store !== 'steam' ? ' · ' + g.store : '')) : 'Not installed'));
   if (g.favorite) card.append(h('span', { class: 'star', html: icon('star') }));
   card.append(h('div', { class: 'meta' }, h('div', { class: 'nm' }, g.name), h('div', { class: 'ct' }, `${g.cheat_count} cheats`)));
   return card;
@@ -75,7 +75,8 @@ function listPage(title, sub, games, withFilter) {
   return p;
 }
 const pageLibrary = () => listPage('My Games', 'Supported games installed on this PC', S.boot.games.filter((g) => g.installed));
-const pageExplore = () => listPage('Explore', 'Every game with a WandLike plugin. Add your own in the plugins folder.', S.boot.games);
+const pageExplore = () => listPage('Explore', 'Every game WandLike supports. Support for installed games downloads automatically from the catalog.',
+  [...S.boot.games, ...(S.boot.catalog_only || []).map((c) => ({ ...c, catalog: true }))]);
 
 async function play(gid) { const r = await call('play', gid); toast(r === 'running' ? 'Already running' : 'Launching through Steam…', 'info'); }
 
@@ -154,13 +155,30 @@ function pageSettings() {
   p.append(h('div', { class: 'set-card' },
     row('Check for updates automatically', s.repo ? `Releases from github.com/${s.repo}` : 'Not configured: set UPDATE_REPO in wandlike/version.py', sw('autoupdate')),
     row(`WandLike v${s.version}`, S.st.update ? `Version ${S.st.update.version} is available` : 'You are on the latest version', updBtn)));
-  p.append(h('div', { class: 'set-card' }, row('Game plugins', 'Drop extra game .json files here to add games.', h('button', { class: 'btn sm', onclick: () => call('open_plugins_folder') }, 'Open folder'))));
+  const ago = (t) => (t ? new Date(t * 1000).toLocaleTimeString() : 'never');
+  const libText = h('span', {}, '');
+  const refreshLib = async () => { const s2 = await call('settings'); Object.assign(s, s2); libText.textContent = `${s.library_count} games found · last scan ${ago(s.library_scanned_at)} · ${s.catalog_status}`; };
+  refreshLib();
+  const rescan = h('button', { class: 'btn sm', onclick: async (e) => { e.currentTarget.textContent = 'Scanning…'; const r = await call('rescan_library', true); e.currentTarget.textContent = 'Rescan'; toast(`Found ${r.count} games (${r.stats.files_parsed || 0} manifests read)`, 'info'); setTimeout(refreshLib, 1500); } }, 'Rescan');
+  const listBtn = h('button', { class: 'btn sm', onclick: async () => {
+    const items = await call('library_info'); const sup = items.filter((i) => i.supported);
+    openModal(h('div', {}, h('h3', {}, 'Detected games'), h('p', {}, `${items.length} found in Steam, Epic and GOG; ${sup.length} supported.`),
+      h('div', { style: 'max-height:300px;overflow:auto;margin-bottom:12px;user-select:text' }, [...sup, ...items.filter((i) => !i.supported)].map((i) => h('div', { style: 'padding:4px 0;font-size:13px;color:' + (i.supported ? 'var(--text)' : 'var(--dim)') }, `${i.supported ? '⚡ ' : ''}${i.name}  ·  ${i.store}`))),
+      h('div', { class: 'mrow' }, h('button', { class: 'btn sm primary', onclick: closeModal }, 'Close'))));
+  } }, 'View');
+  p.append(h('div', { class: 'set-card' },
+    row('Game library', libText, h('div', { class: 'actions' }, listBtn, rescan)),
+    row('Download game support automatically', s.repo ? `When a game is detected, its cheat plugin is pulled from github.com/${s.repo}` : 'Not configured', sw('catalog_sync')),
+    row('Game catalog', 'Check the repository for new or updated game plugins now.', h('button', { class: 'btn sm', onclick: async () => { await call('sync_catalog'); toast('Syncing the catalog…', 'info'); setTimeout(refreshLib, 2500); } }, 'Sync now')),
+    row('Game plugins folder', 'Drop your own game .json files here; they override catalog versions.', h('button', { class: 'btn sm', onclick: () => call('open_plugins_folder') }, 'Open folder'))));
   return p;
 }
 
 /* chrome -------------------------------------------------------------- */
 function applyState(st) {
   S.st = st;
+  if (S.rev !== undefined && st.rev !== S.rev) { S.rev = st.rev; call('bootstrap').then((b) => { S.boot = b; if (['home', 'library', 'explore'].includes(S.page)) render(); }); }
+  S.rev = st.rev;
   const live = Object.values(st.running).some(Boolean);
   const pill = document.getElementById('upd-pill');
   if (st.update) { pill.style.display = 'block'; pill.textContent = st.progress != null ? `Downloading ${Math.round(st.progress * 100)}%` : `Update v${st.update.version}`; }

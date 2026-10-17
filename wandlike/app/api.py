@@ -10,26 +10,35 @@ import time
 from pathlib import Path
 
 from .. import version as V
-from ..core import steam, updater
+from ..core import library as libmod, steam, updater
+from ..core.catalog import Catalog
 from ..core.engine import Engine
 from ..core.hotkeys import HotkeyManager, parse_combo
+from ..core.library import Library
 from ..core.plugin import Cheat, Game, load_all, user_games_dir
 from ..core.settings import Settings
 
 DEFAULT_APP = {"autoupdate": True, "start_with_windows": False, "overlay_hotkey": "Ctrl+Shift+F10",
-               "hotkeys_enabled": True, "console_mode": "key", "accent": "teal"}
+               "hotkeys_enabled": True, "console_mode": "key", "accent": "teal", "catalog_sync": True}
+CATALOG_EVERY = 6 * 3600   # seconds between routine catalog syncs (an unchanged index is a cheap 304)
+RESCAN_EVERY = 90          # seconds between cached library rescans (stat calls only)
 
 
 class Api:
-    def __init__(self, dry_run: bool = False):
+    def __init__(self, dry_run: bool = False, background: bool = True):
         self._dry = dry_run
         self._settings = Settings()
+        self._library = Library()
+        self._detected: list[dict] = self._library.scan()
+        self._catalog = Catalog()
+        self._sync_lock = threading.Lock()
+        self._rev = 0
         self._games: dict[str, Game] = load_all()
         self._engines: dict[str, Engine] = {}
         self._log: collections.deque = collections.deque(maxlen=120)
         self._windows: dict = {}
         self._running: dict[str, bool] = {}
-        self._applied: dict[str, dict] = {gid: {} for gid in self._games}
+        self._applied: dict[str, dict] = collections.defaultdict(dict)
         self._hk = HotkeyManager()
         self._hk_errors: dict[str, str] = {}
         self._update: dict | None = None
@@ -40,8 +49,10 @@ class Api:
         self._stop = threading.Event()
         self._rebind_hotkeys()
         threading.Thread(target=self._monitor, daemon=True).start()
-        if self.app()["autoupdate"]:
-            threading.Thread(target=self._check_update, daemon=True).start()
+        if background:
+            threading.Thread(target=self._background, daemon=True).start()
+            if self.app()["autoupdate"]:
+                threading.Thread(target=self._check_update, daemon=True).start()
 
     # ------------------------------------------------------------ plumbing
     def bind_windows(self, main, overlay):
@@ -85,12 +96,22 @@ class Api:
     def bootstrap(self) -> dict:
         return {"version": V.__version__, "repo": V.UPDATE_REPO, "app": self.app(),
                 "games": [self._game_card(g) for g in self._games.values()],
-                "dry_run": self._dry, "debug": self._debug}
+                "dry_run": self._dry, "debug": self._debug, "rev": self._rev,
+                "catalog_only": self._catalog.entries_for_ui(set(self._games), self._detected)}
+
+    def _lib(self, g: Game) -> dict | None:
+        """The detected library entry (store, id, install dir) for a plugin, if the game is installed."""
+        return libmod.find(self._detected, g.match_spec)
+
+    @staticmethod
+    def _steam_appid(g: Game):
+        return g.steam_appid or g.match.get("steam_appid")
 
     def _game_card(self, g: Game) -> dict:
         d = self._g(g.id)
-        return {"id": g.id, "name": g.name, "appid": g.steam_appid,
-                "installed": bool(g.steam_appid and steam.install_dir(g.steam_appid)),
+        lib = self._lib(g)
+        return {"id": g.id, "name": g.name, "appid": self._steam_appid(g), "installed": bool(lib),
+                "store": lib["store"] if lib else "", "source": g.source, "version": g.version,
                 "favorite": d.get("favorite", False), "last_played": d.get("last_played", 0),
                 "cheat_count": sum(1 for c in g.cheats if c.available and c.kind != "button")}
 
@@ -116,15 +137,17 @@ class Api:
                 "toggles": dict(eng.toggles)}
 
     def art(self, gid: str, kind: str) -> str:
-        appid = self._games[gid].steam_appid
-        return steam.art_data_url(appid, kind) if appid else ""
+        appid = self._steam_appid(self._games[gid])
+        return steam.art_data_url(int(appid), kind) if appid else ""
 
     def state(self) -> dict:
         return {"running": dict(self._running),
                 "toggles": {gid: dict(e.toggles) for gid, e in self._engines.items()},
                 "applied": self._applied, "log": list(self._log)[-60:], "update": self._update,
                 "progress": self._progress, "hk_errors": dict(self._hk_errors),
-                "overlay": self._overlay_visible, "active": self._active}
+                "overlay": self._overlay_visible, "active": self._active, "rev": self._rev,
+                "catalog": {"status": self._catalog.status, "last_sync": self._catalog.last_sync},
+                "library": {"count": len(self._detected), "scanned_at": self._library.scanned_at}}
 
     # -------------------------------------------------------------- cheats
     def set_number(self, gid: str, cid: str, value: float, mode: str = "set"):
@@ -238,15 +261,79 @@ class Api:
         eng = self._engine(gid)
         if eng.running():
             return "running"
-        g = self._games[gid]
-        eng.launch()
+        eng.launch(self._lib(self._games[gid]))
         self._gset(gid, last_played=int(time.time()))
         return "launching"
+
+    # ------------------------------------------------- library + game catalog
+    def _reload_games(self):
+        """Re-read plugins (bundled + catalog + user) after the catalog added or updated one."""
+        new = load_all()
+        for gid, eng in list(self._engines.items()):
+            if gid not in new or new[gid].version != eng.game.version:
+                eng.shutdown()
+                del self._engines[gid]
+        self._games = new
+        self._rev += 1
+        self._rebind_hotkeys()
+
+    def _rescan(self, force: bool = False) -> bool:
+        """Cached library scan; True if the set of detected games changed."""
+        before = {(g["store"], g["id"]) for g in self._detected}
+        self._detected = self._library.scan(force)
+        changed = before != {(g["store"], g["id"]) for g in self._detected}
+        if changed:
+            self._rev += 1
+        return changed
+
+    def _sync_catalog(self):
+        if not self.app()["catalog_sync"] or not self._sync_lock.acquire(blocking=False):
+            return
+        try:
+            msgs = self._catalog.sync(self._detected, {gid: g.version for gid, g in self._games.items()})
+            for m in msgs:
+                self._say(m)
+            if any(not m.startswith("!") for m in msgs):
+                self._reload_games()
+            else:
+                self._rev += 1  # the Explore list may have changed
+        except Exception as e:
+            self._say(f"! catalog sync failed: {e}")
+        finally:
+            self._sync_lock.release()
+
+    def _background(self):
+        time.sleep(2)
+        self._sync_catalog()
+        last_sync = time.time()
+        while not self._stop.wait(RESCAN_EVERY):
+            changed = self._rescan()
+            if changed:
+                self._say("Game library changed")
+            if changed or time.time() - last_sync > CATALOG_EVERY:
+                self._sync_catalog()
+                last_sync = time.time()
+
+    def rescan_library(self, full: bool = True) -> dict:
+        """Settings > Rescan. `full` drops the cache and re-reads every manifest."""
+        self._rescan(force=full)
+        threading.Thread(target=self._sync_catalog, daemon=True).start()
+        return {"count": len(self._detected), "stats": dict(self._library.stats)}
+
+    def sync_catalog(self):
+        threading.Thread(target=self._sync_catalog, daemon=True).start()
+
+    def library_info(self) -> list[dict]:
+        supported = {(lg["store"], lg["id"]) for g in self._games.values() if (lg := self._lib(g))}
+        return [{"name": g["name"], "store": g["store"], "path": g["install_dir"],
+                 "supported": (g["store"], g["id"]) in supported} for g in self._detected]
 
     # ------------------------------------------------------------- settings
     def settings(self) -> dict:
         return {**self.app(), "version": V.__version__, "repo": V.UPDATE_REPO,
-                "plugins_dir": str(user_games_dir()), "frozen": bool(getattr(sys, "frozen", False))}
+                "plugins_dir": str(user_games_dir()), "frozen": bool(getattr(sys, "frozen", False)),
+                "library_count": len(self._detected), "library_scanned_at": self._library.scanned_at,
+                "catalog_status": self._catalog.status}
 
     def set_setting(self, key: str, value):
         if key not in DEFAULT_APP:

@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "games": [
+    {
+      "id": "ck3",
+      "name": "Crusader Kings III",
+      "version": 1,
+      "file": "ck3.json",
+      "sha256": "b37437a27edd2c982ecdb91c08306a4bee658d263478bcf9e8f270b110c71848",
+      "match": {
+        "steam_appid": 1158310
+      },
+      "cheats": 19
+    }
+  ]
+}

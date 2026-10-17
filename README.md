@@ -24,6 +24,12 @@ Not implemented: a phone remote and cloud sync.
 
 Preview the UI in any browser with `python tools/dev_server.py` (dry-run backend).
 
+## Game library and catalog
+- **Library scan** (`core/library.py`): finds installed games in Steam (all library folders), Epic (launcher manifests) and GOG (registry). Results are cached in `%APPDATA%\WandLike\library_cache.json`: manifests are re-read only if their size/mtime changed and folders are re-listed only if their mtime changed, so a normal rescan is a few `stat` calls (every 90 s while the app runs; *Settings → Rescan* forces a full re-read).
+- **Catalog** (`core/catalog.py`): the plugin JSONs in `wandlike/games/` are served straight from this GitHub repo along with `wandlike/games/_index.json`. The app fetches the index (ETag, so unchanged = a 304) and downloads a plugin **only when a detected game matches it** and it is missing or older than the index version. Downloads must match the index SHA-256 and pass the strict plugin loader; they are stored in `%APPDATA%\WandLike\catalog\games`. Precedence: user plugins > highest `version` of bundled/catalog.
+- **Publishing a plugin/update:** add or edit `wandlike/games/<id>.json` (its `"match"` says how the game is recognised: `{"steam_appid": N}`, `{"epic": "<AppName>"}` or `{"gog": "<id>"}`), **bump its `"version"`**, run `python tools/make_catalog.py`, commit and push to `main`. Installed apps pick it up on their next sync, no new app release needed. A test fails if `_index.json` is stale. Use `"min_app": "1.2.0"` for plugins that need a newer app.
+- Needs the repository to be **public** (it is read from raw.githubusercontent.com without signing in). Plugins are data, but they type commands into games, so only merge plugins you trust: the hash protects against corruption, not against a malicious commit to your own repo.
+
 ## Debug build
 ```
 .\build.ps1 -Debug        # or: .\build.ps1 --debug   ->  dist\WandLike-Debug.exe

@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# plugin files are hashed by the catalog, so keep their line endings fixed
+wandlike/games/*.json text eol=lf

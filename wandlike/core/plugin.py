@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -47,37 +49,88 @@ class Game:
     name: str
     exe: str
     window_title: str
-    steam_appid: int | None
     launch_args: str
     console: dict
     cheats: list[Cheat]
     notes: str = ""
+    steam_appid: int | None = None
+    # how the game is recognised in the user's libraries, e.g. {"steam_appid": 1158310} / {"epic": "<AppName>"} / {"gog": "<id>"}
+    match: dict = field(default_factory=dict)
+    version: int = 1                # bump when the plugin changes; newer versions replace older ones
+    min_app: str = ""               # oldest WandLike that understands this plugin
+    source: str = ""                # bundled | catalog | user (set by the loader, not stored in the file)
 
     def cheat(self, cid: str) -> Cheat:
         return next(c for c in self.cheats if c.id == cid)
 
+    @property
+    def match_spec(self) -> dict:
+        return self.match or ({"steam_appid": self.steam_appid} if self.steam_appid else {})
+
+
+MAX_PLUGIN_BYTES = 256 * 1024
+ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+MATCH_KEYS = {"steam_appid", "epic", "gog"}
+
+
+def parse_game(raw: dict) -> Game:
+    """Strictly build a Game from untrusted JSON: unknown keys, bad ids or oversize plugins raise."""
+    raw = dict(raw)
+    if not isinstance(raw.get("cheats"), list) or len(raw["cheats"]) > 300:
+        raise ValueError("cheats must be a list of at most 300 entries")
+    cheats = [Cheat(**c) for c in raw.pop("cheats")]
+    raw.pop("source", None)
+    g = Game(cheats=cheats, **raw)
+    if not ID_RE.match(g.id):
+        raise ValueError(f"bad game id {g.id!r}")
+    if not set(g.match) <= MATCH_KEYS:
+        raise ValueError(f"unknown match keys {set(g.match) - MATCH_KEYS}")
+    if len({c.id for c in g.cheats}) != len(g.cheats):
+        raise ValueError("duplicate cheat ids")
+    return g
+
 
 def load_game(path: Path) -> Game:
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    cheats = [Cheat(**c) for c in raw.pop("cheats")]
-    return Game(cheats=cheats, **raw)
+    if path.stat().st_size > MAX_PLUGIN_BYTES:
+        raise ValueError("plugin file too large")
+    return parse_game(json.loads(path.read_text(encoding="utf-8")))
 
 
 def user_games_dir() -> Path:
-    import os
     return Path(os.environ.get("APPDATA", Path.home())) / "WandLike" / "games"
 
 
-def load_all(directory: Path = GAMES_DIR, include_user: bool = True) -> dict[str, Game]:
-    """Bundled plugins plus any the user dropped into %APPDATA%/WandLike/games."""
-    games = {}
-    dirs = [directory] + ([user_games_dir()] if include_user else [])
-    for d in dirs:
+def catalog_games_dir() -> Path:
+    """Plugins downloaded from the GitHub catalog."""
+    return Path(os.environ.get("APPDATA", Path.home())) / "WandLike" / "catalog" / "games"
+
+
+def _app_version() -> tuple[int, ...]:
+    from .. import version as V
+    return tuple(int(p) for p in V.__version__.split(".") if p.isdigit())
+
+
+def load_all(directory: Path = GAMES_DIR, include_user: bool = True, catalog_dir: Path | None = None) -> dict[str, Game]:
+    """Bundled + catalog + user plugins. The highest `version` wins between bundled and catalog; a user plugin always wins."""
+    games: dict[str, Game] = {}
+    cat = catalog_dir if catalog_dir is not None else catalog_games_dir()
+    sources = [(directory, "bundled"), (cat, "catalog")] + ([(user_games_dir(), "user")] if include_user else [])
+    for d, label in sources:
+        if not d.exists():
+            continue
         for p in sorted(d.glob("*.json")):
+            if p.name.startswith("_"):      # _index.json etc.
+                continue
             try:
                 g = load_game(p)
-            except Exception as e:  # a bad user plugin must not break the app
+                if g.min_app and tuple(int(x) for x in g.min_app.split(".")) > _app_version():
+                    print(f"skipping plugin {p.name}: needs WandLike {g.min_app}+")
+                    continue
+            except Exception as e:  # a bad plugin must not break the app
                 print(f"skipping plugin {p}: {e}")
                 continue
-            games[g.id] = g
+            g.source = label
+            old = games.get(g.id)
+            if old is None or label == "user" or g.version > old.version:
+                games[g.id] = g
     return games

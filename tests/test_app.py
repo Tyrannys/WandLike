@@ -26,7 +26,7 @@ class ApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from wandlike.app.api import Api
-        cls.api = Api(dry_run=True)
+        cls.api = Api(dry_run=True, background=False)
 
     def test_bootstrap_and_game(self):
         b = self.api.bootstrap()

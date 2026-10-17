@@ -108,13 +108,25 @@ class Engine:
             return None
         return "debug_mode" in out
 
-    def launch(self) -> None:
-        if self.game.steam_appid:
-            args = self.game.launch_args
-            os.startfile(f"steam://run/{self.game.steam_appid}//{args}/")  # type: ignore[attr-defined]
+    def launch(self, lib: dict | None = None) -> None:
+        """Start the game through its store. `lib` is the detected library entry (store, id, install_dir, exe)."""
+        args = self.game.launch_args
+        store = (lib or {}).get("store") or ("steam" if self.game.steam_appid else "")
+        if self.dry_run:
+            self.log(f"[dry-run] launch via {store or 'unknown store'} with '{args}'")
+        elif store == "steam":
+            appid = (lib or {}).get("id") or self.game.steam_appid
+            os.startfile(f"steam://run/{appid}//{args}/")  # type: ignore[attr-defined]
             self.log(f"Launching via Steam with '{args}'")
+        elif store == "epic":
+            os.startfile(f"com.epicgames.launcher://apps/{lib['id']}?action=launch&silent=true")  # type: ignore[attr-defined]
+            self.log("Launching via Epic Games" + (" (launch options can't be passed; set them in Epic)" if args else ""))
+        elif store == "gog" and lib.get("exe"):
+            import shlex
+            subprocess.Popen([os.path.join(lib["install_dir"], lib["exe"]), *shlex.split(args)], cwd=lib["install_dir"])
+            self.log(f"Launching GOG install with '{args}'")
         else:
-            self.log("No Steam app id for this game; launch it manually with: " + self.game.launch_args)
+            self.log("Couldn't find this game in your libraries; launch it manually with: " + args)
 
     # ----------------------------------------------------------- actions
     def apply_number(self, cheat: Cheat, value: float, mode: str = "set") -> None:
