@@ -34,7 +34,7 @@ It adds Start Menu/Desktop shortcuts and an *Apps & features* uninstall entry. S
 
 **Auto-update** uses GitHub Releases:
 1. Set `UPDATE_REPO = "owner/repo"` in `wandlike/version.py`.
-2. Push a tag `vX.Y.Z`. `.github/workflows/release.yml` runs the tests, builds, and publishes `WandLike-Setup.exe` (+ `.sha256`) to the release. (Or build locally with `.\build.ps1 -Version X.Y.Z` and upload `dist\WandLike-Setup.exe` yourself; the asset must keep that name.)
+2. Push a tag `vX.Y.Z`. `.github/workflows/release.yml` runs the tests, builds, and publishes `WandLike-Setup.exe` to the release. (Or build locally with `.\build.ps1 -Version X.Y.Z` and upload `dist\WandLike-Setup.exe` yourself; the asset must keep that name.)
 3. Installed apps check on startup (and when you click the version label), show an *Update & restart* banner, download the asset (SHA-256 verified against GitHub's digest), and run it silently; it waits for the app to exit, installs the new `app-X` folder and relaunches.
 
 Only releases of that repo, only non-draft/non-prerelease, are accepted. The exes are unsigned, so SmartScreen may warn on first run.

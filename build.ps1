@@ -43,5 +43,4 @@ Set-Content build\payload\version.txt $ver -NoNewline
 if ($LASTEXITCODE) { throw "setup build failed" }
 
 $hash = (Get-FileHash dist\WandLike-Setup.exe -Algorithm SHA256).Hash.ToLower()
-Set-Content dist\WandLike-Setup.exe.sha256 "$hash  WandLike-Setup.exe"
 Write-Host "dist\WandLike-Setup.exe  sha256 $hash"

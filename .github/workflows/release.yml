@@ -18,7 +18,5 @@ jobs:
         run: ./build.ps1 -Version "${{ github.ref_name }}".TrimStart("v")
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/WandLike-Setup.exe
-            dist/WandLike-Setup.exe.sha256
+          files: dist/WandLike-Setup.exe
           generate_release_notes: true
