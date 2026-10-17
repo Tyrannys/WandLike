@@ -36,6 +36,7 @@ class Api:
         self._progress: float | None = None
         self._active = next(iter(self._games), "")
         self._overlay_visible = False
+        self._debug = False  # flipped by wandlike.debug.setup() in debug builds only
         self._stop = threading.Event()
         self._rebind_hotkeys()
         threading.Thread(target=self._monitor, daemon=True).start()
@@ -84,7 +85,7 @@ class Api:
     def bootstrap(self) -> dict:
         return {"version": V.__version__, "repo": V.UPDATE_REPO, "app": self.app(),
                 "games": [self._game_card(g) for g in self._games.values()],
-                "dry_run": self._dry}
+                "dry_run": self._dry, "debug": self._debug}
 
     def _game_card(self, g: Game) -> dict:
         d = self._g(g.id)

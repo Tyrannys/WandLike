@@ -24,6 +24,15 @@ Not implemented: a phone remote and cloud sync.
 
 Preview the UI in any browser with `python tools/dev_server.py` (dry-run backend).
 
+## Debug build
+```
+.\build.ps1 -Debug        # or: .\build.ps1 --debug   ->  dist\WandLike-Debug.exe
+python -m wandlike --debug                       # same thing from source
+```
+The debug exe is standalone (no installer), opens a **console window**, and adds: verbose logging of every backend call and engine command (console + `%APPDATA%\WandLike\debug.log`), faulthandler and uncaught-exception logging, right-click *Inspect* (WebView2 devtools), and a **Debug** page (red `DEBUG` pill in the title bar) to fake an update, pretend a game is running/closed, throw a test exception, send a raw console line to the game, and view the environment, log tail and saved settings.
+
+All of that lives in `wandlike/debug/` and `wandlike/web/debug.js`. The release build excludes both (`--exclude-module wandlike.debug`, and `debug.js` is left out of the bundled web folder), and `build.ps1` fails if either ends up in the release exe. Passing `--debug` or `WANDLIKE_DEBUG=1` to a release exe does nothing. Add new debug-only code inside `wandlike/debug/` (backend) or `debug.js` (UI) and it stays out of releases automatically.
+
 ## Install, update, release
 Run `dist\WandLike-Setup.exe` (build it with `.\build.ps1`; needs Python 3.10+, it creates `.venv-build` and installs PyInstaller there). It installs per-user, no admin, Wand-style:
 ```

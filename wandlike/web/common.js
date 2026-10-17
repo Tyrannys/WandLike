@@ -13,6 +13,7 @@ const ICONS = {
   refresh: '<path d="M20 11a8 8 0 0 0-14-4M4 4v4h4M4 13a8 8 0 0 0 14 4M20 20v-4h-4"/>', x: '<path d="M6 6l12 12M18 6 6 18"/>',
   log: '<path d="M4 6h16M4 12h16M4 18h10"/>', folder: '<path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   down: '<path d="M12 4v12m0 0-5-5m5 5 5-5M5 20h14"/>',
+  bug: '<rect x="8" y="8" width="8" height="12" rx="4"/><path d="M9 5l1.5 2M15 5l-1.5 2M4 12h4M16 12h4M4 18l4-2M20 18l-4-2M4 6l4 3M20 6l-4 3"/>',
 };
 const icon = (n) => `<svg viewBox="0 0 24 24">${ICONS[n] || ''}</svg>`;
 

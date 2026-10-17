@@ -13,6 +13,7 @@ def main() -> int:
                     help="headless: --run ck3 money 5000 | --run ck3 instabuild on")
     ap.add_argument("--self-check", metavar="OUT.json", help="write a JSON health report and exit (used by build tests)")
     ap.add_argument("--version", action="store_true")
+    ap.add_argument("--debug", action="store_true", help="debug mode: console logging + debug page (source/debug builds only)")
     ns, _ = ap.parse_known_args()
 
     if ns.self_check:

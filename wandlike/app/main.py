@@ -19,8 +19,17 @@ def web_dir() -> Path:
 
 def run(dry_run: bool = False) -> None:
     api = Api(dry_run)
+    debug_on = False
+    try:  # the package is stripped from release builds, so this import simply fails there
+        from .. import debug as dbg
+        if dbg.enabled():
+            dbg.setup(api)
+            debug_on = True
+    except ImportError:
+        pass
     web = web_dir()
-    main = webview.create_window("WandLike", str(web / "index.html"), js_api=api, width=1180, height=780,
+    title = "WandLike [DEBUG]" if debug_on else "WandLike"
+    main = webview.create_window(title, str(web / "index.html"), js_api=api, width=1180, height=780,
                                  min_size=(920, 620), frameless=True, background_color=BG)
     overlay = webview.create_window("WandLike Overlay", str(web / "overlay.html"), js_api=api, width=320,
                                     height=440, frameless=True, on_top=True, hidden=True, resizable=False,
@@ -29,4 +38,4 @@ def run(dry_run: bool = False) -> None:
     main.events.closed += lambda: os._exit(0)
     storage = Path(os.environ.get("APPDATA", Path.home())) / "WandLike" / "webview"
     storage.mkdir(parents=True, exist_ok=True)
-    webview.start(storage_path=str(storage), debug=bool(os.environ.get("WANDLIKE_DEBUG")))
+    webview.start(storage_path=str(storage), debug=debug_on)  # debug=True enables right-click > Inspect

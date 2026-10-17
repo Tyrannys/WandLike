@@ -1,6 +1,7 @@
 /* Main window: navigation, Home / Library / Explore / Game / Settings pages. Uses common.js. */
 const S = { boot: null, page: 'home', gid: null, game: null, st: { running: {}, toggles: {}, log: [], applied: {} }, art: {}, shut: {}, q: '' };
 const $main = document.getElementById('main');
+const EXTRA = {};   // extra sidebar pages, registered by debug.js in debug builds: { id: { icon, label, page() } }
 
 async function art(gid, kind) {
   const k = gid + kind;
@@ -25,7 +26,7 @@ function renderNav() {
   const side = document.getElementById('side'); side.replaceChildren();
   const item = (id, ic, label) => h('button', { class: 'nav' + (S.page === id ? ' on' : ''), onclick: () => go(id), html: icon(ic) + `<span>${label}</span>` });
   side.append(item('home', 'home', 'Home'), item('library', 'grid', 'My Games'), item('explore', 'compass', 'Explore'),
-    h('div', { class: 'sp' }), item('settings', 'gear', 'Settings'));
+    h('div', { class: 'sp' }), ...Object.entries(EXTRA).map(([id, x]) => item(id, x.icon, x.label)), item('settings', 'gear', 'Settings'));
 }
 function go(page) { S.page = page; renderNav(); render(); }
 async function openGame(gid) {
@@ -33,7 +34,8 @@ async function openGame(gid) {
 }
 
 function render() {
-  const fn = { home: pageHome, library: pageLibrary, explore: pageExplore, game: pageGame, settings: pageSettings }[S.page];
+  const fn = { home: pageHome, library: pageLibrary, explore: pageExplore, game: pageGame, settings: pageSettings,
+    ...Object.fromEntries(Object.entries(EXTRA).map(([id, x]) => [id, x.page])) }[S.page];
   const top = $main.scrollTop;
   $main.replaceChildren(fn()); $main.scrollTop = S.page === 'game' ? top : 0;
 }
@@ -204,5 +206,8 @@ function wireChrome() {
   S.boot = await call('bootstrap'); S.settings = await call('settings');
   S.st = await call('state');
   if (S.boot.dry_run) toast('Dry-run mode: commands are logged, not sent to the game.', 'info');
+  if (S.boot.debug) {   // debug.js only exists in debug builds
+    await new Promise((res) => document.head.append(h('script', { src: 'debug.js', onload: res, onerror: res })));
+  }
   renderNav(); render(); poll();
 })();
