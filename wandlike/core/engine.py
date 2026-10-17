@@ -79,6 +79,8 @@ class Engine:
         self.game, self.log, self.dry_run = game, log, dry_run
         self.driver = ConsoleDriver(game, log, dry_run)
         self.toggles: dict[str, bool] = {}
+        self.opts: dict[str, dict] = {}
+        self._last: dict[str, float] = {}
         self._q: queue.Queue = queue.Queue()
         self._stop = threading.Event()
         threading.Thread(target=self._worker, daemon=True).start()
@@ -123,9 +125,14 @@ class Engine:
 
     def set_toggle(self, cheat: Cheat, on: bool) -> None:
         self.toggles[cheat.id] = on
-        if cheat.interval and not on:
-            return  # repeater stops by itself
+        if cheat.interval:
+            self._last[cheat.id] = time.time()  # first repeat is one interval from now
+            if not on:
+                return  # repeater stops by itself
         self._submit(lambda: self.driver.send(console_lines(cheat, "on" if on else "off")))
+
+    def set_option(self, cheat: Cheat, opt_id: str, value) -> None:
+        self.opts.setdefault(cheat.id, {})[opt_id] = value
 
     def press(self, cheat: Cheat) -> None:
         if cheat.launch:
@@ -156,12 +163,13 @@ class Engine:
                 self.log(f"! {e}")
 
     def _repeater(self) -> None:
-        last: dict[str, float] = {}
+        last = self._last
         while not self._stop.is_set():
             now = time.time()
             for c in self.game.cheats:
                 if c.kind == "toggle" and c.interval and self.toggles.get(c.id):
-                    if now - last.get(c.id, 0) >= c.interval:
+                    every = float(self.opts.get(c.id, {}).get("interval", c.interval))
+                    if now - last.get(c.id, 0) >= every:
                         last[c.id] = now
                         self._submit(lambda c=c: self.driver.send(console_lines(c, "on")))
             time.sleep(0.5)

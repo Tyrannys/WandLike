@@ -22,6 +22,7 @@ class Cheat:
     off: list[str] = field(default_factory=list)
     run: list[str] = field(default_factory=list)   # button commands
     interval: float | None = None   # toggle: repeat `on` every N seconds
+    options: list[dict] = field(default_factory=list)  # [{id,label,type:"number",min,max,default}] ("interval" is special)
     # --- memory backend
     memory: dict | None = None
     # --- number range

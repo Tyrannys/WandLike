@@ -11,6 +11,19 @@ python -m wandlike --run ck3 instabuild on
 ```
 Python 3.10+, Windows, no third-party packages.
 
+## The app
+A Wand-style desktop app (pywebview/WebView2, frameless window, dark theme), with everything free:
+- **Home / My Games / Explore**: Steam libraries are scanned for supported games; cover and hero art come from Steam's local cache. Favorites, recently played, search.
+- **Game page**: Play (launches through Steam, with `-debug_mode` for CK3), collapsible sections, info tooltips, number steppers with *Set/Add* mode, On/Off toggles with an options gear, search.
+- **Pin** cheats (pin icon) → they appear in a *Pinned* section and in the **in-game overlay** (default `Ctrl+Shift+F10`; run the game windowed/borderless).
+- **Global hotkeys** per cheat (keyboard icon on a row), with conflict detection.
+- **Saved cheats**: bookmark icon saves your enabled toggles and applied values; *Apply saved* re-applies them; *Auto-apply* does it ~20 s after the game starts.
+- **Settings**: hotkeys on/off, overlay hotkey, console key (backtick or Shift+Alt+C), start with Windows, update check.
+- Activity log (bottom-left) shows each command sent to the game.
+Not implemented: a phone remote and cloud sync.
+
+Preview the UI in any browser with `python tools/dev_server.py` (dry-run backend).
+
 ## Install, update, release
 Run `dist\WandLike-Setup.exe` (build it with `.\build.ps1`; needs Python 3.10+, it creates `.venv-build` and installs PyInstaller there). It installs per-user, no admin, Wand-style:
 ```

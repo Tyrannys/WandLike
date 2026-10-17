@@ -17,7 +17,7 @@ def main() -> int:
 
     if ns.self_check:
         import json
-        import tkinter  # noqa: F401  (proves Tk is bundled)
+        import webview  # noqa: F401  (proves pywebview is bundled)
         from .version import UPDATE_REPO, __version__
         games = load_all()
         with open(ns.self_check, "w", encoding="utf-8") as f:
@@ -52,8 +52,8 @@ def main() -> int:
         time.sleep(2 if ns.dry_run else 6)
         return 0
 
-    from .ui.app import App
-    App(dry_run=ns.dry_run).mainloop()
+    from .app.main import run
+    run(dry_run=ns.dry_run)
     return 0
 
 

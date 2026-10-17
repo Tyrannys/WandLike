@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WandLike Overlay</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  html, body { background: #0b0c10f2; }
+  #ov-head { display: flex; align-items: center; height: 38px; padding: 0 6px 0 14px; border-bottom: 1px solid var(--line); gap: 8px; }
+  #ov-head b { font-size: 13px; } #ov-head .game { color: var(--dim); font-size: 12px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #ov-list { padding: 6px 4px; overflow-y: auto; height: calc(100% - 38px); }
+  #ov-list .row { height: 44px; gap: 8px; padding: 0 6px; } #ov-list .nm { font-size: 13px; white-space: nowrap; }
+  #ov-list .pill input { width: 62px; } #ov-list .seg button { width: 38px; } #ov-list .info, #ov-list .req, #ov-list .gear { display: none; }
+  #ov-list .hint { color: var(--dim); padding: 22px 14px; font-size: 12.5px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="ov-head"><span class="pywebview-drag-region" style="flex:1;display:flex;align-items:center;gap:8px;height:100%"><b>WandLike</b><span class="game" id="ov-game"></span></span>
+  <button class="winbtn" style="width:34px;height:34px" id="ov-close" title="Hide overlay"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+<div id="ov-list"></div>
+<div class="scrim" id="scrim"><div class="modal" id="modal"></div></div>
+<div id="toasts"></div>
+<script src="common.js"></script>
+<script>
+  const O = { gid: null, game: null, st: { toggles: {}, running: {} }, key: '' };
+  document.getElementById('ov-close').onclick = () => call('toggle_overlay');
+  async function tick() {
+    try {
+      O.st = await call('state');
+      const running = Object.keys(O.st.running).find((k) => O.st.running[k]);
+      const gid = running || O.st.active;
+      const sig = gid + JSON.stringify(O.st.toggles[gid] || {}).length;
+      if (gid && (gid !== O.gid || !O.game)) { O.gid = gid; O.game = await call('game', gid); O.key = ''; draw(); }
+      else if (O.game) { syncToggles(document.getElementById('ov-list'), O.game, O.st); }
+    } catch (e) {}
+    setTimeout(tick, 1200);
+  }
+  function draw() {
+    const g = O.game, list = document.getElementById('ov-list');
+    document.getElementById('ov-game').textContent = g.name; list.replaceChildren();
+    const ctx = { st: () => O.st, compact: true, onChange: draw };
+    let cs = g.cheats.filter((c) => c.pinned && c.available);
+    if (!cs.length) { list.append(h('div', { class: 'hint' }, 'Pin cheats in the main window (the pin icon on hover) and they show up here.')); return; }
+    cs.forEach((c) => list.append(cheatRow(g, c, ctx)));
+  }
+  tick();
+</script>
+</body>
+</html>

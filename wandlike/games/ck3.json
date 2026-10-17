@@ -57,13 +57,13 @@
     {"id": "instabuild", "label": "Instant Construction", "kind": "toggle", "info": "Finishes constructions instantly and reinforces men-at-arms at once. The game's `instabuild` command is a toggle itself.",
      "on": ["instabuild"], "off": ["instabuild"], "verified": "wiki"},
 
-    {"id": "fast_culture", "label": "Fast Culture Progress", "kind": "toggle", "info": "Every 20 s discovers the innovations of your culture's current era (`discover_era`). Far faster than vanilla.",
+    {"id": "fast_culture", "label": "Fast Culture Progress", "kind": "toggle", "options": [{"id": "interval", "label": "Repeat every (seconds)", "type": "number", "min": 5, "max": 300, "default": 20}],"info": "Every 20 s discovers the innovations of your culture's current era (`discover_era`). Far faster than vanilla.",
      "on": ["discover_era"], "interval": 20, "verified": "wiki"},
 
     {"id": "instamove", "label": "Instant Movement", "kind": "toggle", "info": "Armies move one barony per day. Affects the AI too. The game gives no 'off' command; typing it again may not undo it, restart the game to clear.",
      "on": ["instamove"], "off": [], "verified": "wiki"},
 
-    {"id": "max_county_control", "label": "Max County Control", "kind": "toggle", "info": "Every 15 s sets control of all your counties to the maximum.",
+    {"id": "max_county_control", "label": "Max County Control", "kind": "toggle", "options": [{"id": "interval", "label": "Repeat every (seconds)", "type": "number", "min": 5, "max": 300, "default": 15}], "info": "Every 15 s sets control of all your counties to the maximum.",
      "on": ["effect every_sub_realm_county = { change_county_control = 100 }"], "interval": 15, "verified": "inferred"},
 
     {"id": "freeze_time", "label": "Freeze Time", "kind": "toggle", "info": "Needs the game's pause flag in memory, which can't be driven through the console. Planned for the memory backend (see games/README.md).",

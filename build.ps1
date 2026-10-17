@@ -18,7 +18,7 @@ Write-Host "Building WandLike $ver"
 
 if (-not (Test-Path .venv-build)) { python -m venv .venv-build }
 $py = ".venv-build\Scripts\python.exe"
-& $py -m pip install --quiet --disable-pip-version-check pyinstaller
+& $py -m pip install --quiet --disable-pip-version-check pyinstaller pywebview
 if ($LASTEXITCODE) { throw "pip failed" }
 
 & $py tools\make_icon.py assets\app.ico
@@ -27,7 +27,9 @@ New-Item -ItemType Directory build\payload -Force | Out-Null
 
 # 1) the application
 & $py -m PyInstaller --noconfirm --onefile --noconsole --name WandLike --icon "$PSScriptRoot\assets\app.ico" `
-    --add-data "$PSScriptRoot\wandlike\games;wandlike\games" --add-data "$PSScriptRoot\assets;assets" `
+    --collect-all webview --collect-all clr_loader --collect-all pythonnet `
+    --add-data "$PSScriptRoot\wandlike\games;wandlike\games" --add-data "$PSScriptRoot\wandlike\web;wandlike\web" `
+    --add-data "$PSScriptRoot\assets;assets" `
     --distpath build\app --workpath build\work-app --specpath build "$PSScriptRoot\run_app.py"
 if ($LASTEXITCODE) { throw "app build failed" }
 Copy-Item build\app\WandLike.exe build\payload\WandLike.exe
