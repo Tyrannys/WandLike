@@ -1,0 +1,24 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Test
+        run: python -m unittest discover -s tests
+      - name: Build (version taken from the tag)
+        shell: pwsh
+        run: ./build.ps1 -Version "${{ github.ref_name }}".TrimStart("v")
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/WandLike-Setup.exe
+            dist/WandLike-Setup.exe.sha256
+          generate_release_notes: true
