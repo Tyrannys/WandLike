@@ -3,7 +3,8 @@
     python tools/make_catalog.py          # write it
     python tools/make_catalog.py --check  # exit 1 if the committed index is stale (CI / tests)
 
-Run it after changing any plugin, and bump that plugin's "version" so installed apps pull the new file.
+Installed launchers detect plugin changes by content hash, so there is nothing to bump. The catalog.yml workflow
+runs this automatically on every push to main that touches a plugin; run it locally to keep the tests green.
 """
 import json
 import sys

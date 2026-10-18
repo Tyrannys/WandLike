@@ -100,5 +100,44 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(self.api.set_hotkey("ck3", "dread", "Ctrl+Nope"))
 
 
+class PluginUpdateFlow(unittest.TestCase):
+    """A game's .json edited on GitHub (no version bump anywhere) reaches the running launcher."""
+
+    def test_updated_json_reaches_the_loaded_game_and_nothing_happens_when_unchanged(self):
+        import json
+        from wandlike.app.api import Api
+        from wandlike.core.catalog import Catalog, sha256
+        from wandlike.core.plugin import GAMES_DIR
+
+        raw = json.loads((GAMES_DIR / "ck3.json").read_text(encoding="utf-8"))
+        raw["notes"] = "EDITED ON GITHUB, same version number"
+        body = json.dumps(raw).encode()
+        index = {"schema": 1, "games": [{"id": "ck3", "name": raw["name"], "version": raw["version"], "file": "ck3.json",
+                                          "sha256": sha256(body), "match": raw["match"], "cheats": 20,
+                                          "min_app": raw["min_app"]}]}
+
+        def fetch(url, etag=None, timeout=10):
+            name = url.rsplit("/", 1)[-1]
+            return (200, "e1", json.dumps(index).encode()) if name == "_index.json" else (200, None, body)
+
+        api = Api(dry_run=True, background=False)
+        api._catalog = Catalog(repo="me/wl", fetch=fetch)
+        self.addCleanup(lambda: [f.unlink() for f in api._catalog.games_dir.glob("*.json")])   # don't leak into other tests
+        api._detected = [{"store": "steam", "id": "1158310", "name": "CK3", "install_dir": "x"}]
+        self.assertNotEqual(api.game("ck3")["notes"], raw["notes"])
+        rev = api._rev
+
+        api._sync_catalog()
+        self.assertEqual(api.game("ck3")["notes"], raw["notes"])             # new content is live
+        self.assertEqual(api._games["ck3"].source, "catalog")
+        self.assertGreater(api._rev, rev)                                    # the UI is told to refresh
+        self.assertTrue(any("Updated support" in n["text"] for n in api.state()["notices"]))
+
+        rev = api._rev
+        api._sync_catalog()                                                   # nothing changed upstream
+        self.assertEqual(api._rev, rev)
+        self.assertEqual(len(api.state()["notices"]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

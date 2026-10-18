@@ -34,6 +34,8 @@ class Api:
         self._catalog = Catalog()
         self._sync_lock = threading.Lock()
         self._rev = 0
+        self._notice_id = 0
+        self._notices: collections.deque = collections.deque(maxlen=8)
         self._games: dict[str, Game] = load_all()
         self._engines: dict[str, Engine] = {}
         self._log: collections.deque = collections.deque(maxlen=120)
@@ -58,6 +60,11 @@ class Api:
     # ------------------------------------------------------------ plumbing
     def bind_windows(self, main, overlay):
         self._windows = {"main": main, "overlay": overlay}
+
+    def _notice(self, text: str):
+        """A message the UI should pop up once (e.g. a game's cheats were updated)."""
+        self._notice_id += 1
+        self._notices.append({"id": self._notice_id, "text": text})
 
     def _say(self, msg: str):
         if msg.strip():
@@ -153,6 +160,7 @@ class Api:
                 "console_ready": {gid: e.console_ready()[0] for gid, e in self._engines.items()
                                   if e.game.console.get("requires_symbol")},
                 "catalog": {"status": self._catalog.status, "last_sync": self._catalog.last_sync},
+                "notices": list(self._notices),
                 "library": {"count": len(self._detected), "scanned_at": self._library.scanned_at}}
 
     # -------------------------------------------------------------- cheats
@@ -325,12 +333,15 @@ class Api:
         if not self.app()["catalog_sync"] or not self._sync_lock.acquire(blocking=False):
             return
         try:
-            msgs = self._catalog.sync(self._detected, {gid: g.version for gid, g in self._games.items()})
+            before = list(self._catalog.index)
+            msgs = self._catalog.sync(self._detected)
             for m in msgs:
                 self._say(m)
+                if m.startswith(("Added support", "Updated support")):
+                    self._notice(m)
             if any(not m.startswith("!") for m in msgs):
                 self._reload_games()
-            else:
+            elif self._catalog.index != before:
                 self._rev += 1  # the Explore list may have changed
         except Exception as e:
             self._say(f"! catalog sync failed: {e}")

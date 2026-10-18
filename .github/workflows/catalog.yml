@@ -1,0 +1,33 @@
+name: catalog-index
+# Game plugins are pulled by the launcher straight from this repo. Whenever a plugin changes on main,
+# regenerate wandlike/games/_index.json (content hashes) so installed launchers notice the update.
+# No plugin version bump and no app release is needed.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "wandlike/games/*.json"
+      - "!wandlike/games/_index.json"
+permissions:
+  contents: write
+jobs:
+  index:
+    runs-on: windows-latest   # the plugin loader imports Windows-only modules
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Regenerate the index
+        run: python tools/make_catalog.py
+      - name: Commit it if it changed
+        shell: bash
+        run: |
+          if git diff --quiet -- wandlike/games/_index.json; then
+            echo "index already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add wandlike/games/_index.json
+          git commit -m "Regenerate game catalog index"
+          git push

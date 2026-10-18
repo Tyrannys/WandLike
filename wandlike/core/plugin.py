@@ -57,7 +57,7 @@ class Game:
     hook: dict = field(default_factory=dict)   # named memory symbols found by byte pattern (see core/hook.py)
     # how the game is recognised in the user's libraries, e.g. {"steam_appid": 1158310} / {"epic": "<AppName>"} / {"gog": "<id>"}
     match: dict = field(default_factory=dict)
-    version: int = 1                # bump when the plugin changes; newer versions replace older ones
+    version: int = 1                # informational only: updates are detected by file content, nothing to bump
     min_app: str = ""               # oldest WandLike that understands this plugin
     source: str = ""                # bundled | catalog | user (set by the loader, not stored in the file)
 
@@ -142,7 +142,8 @@ def _app_version() -> tuple[int, ...]:
 
 
 def load_all(directory: Path = GAMES_DIR, include_user: bool = True, catalog_dir: Path | None = None) -> dict[str, Game]:
-    """Bundled + catalog + user plugins. The highest `version` wins between bundled and catalog; a user plugin always wins."""
+    """Bundled, then downloaded (catalog), then user plugins; each later source replaces the earlier one for the same id.
+    The catalog only keeps a copy when it is newer content than the bundled one, so `version` is informational."""
     games: dict[str, Game] = {}
     cat = catalog_dir if catalog_dir is not None else catalog_games_dir()
     sources = [(directory, "bundled"), (cat, "catalog")] + ([(user_games_dir(), "user")] if include_user else [])
@@ -162,6 +163,6 @@ def load_all(directory: Path = GAMES_DIR, include_user: bool = True, catalog_dir
                 continue
             g.source = label
             old = games.get(g.id)
-            if old is None or label == "user" or g.version > old.version:
+            if old is None or label != "bundled":
                 games[g.id] = g
     return games

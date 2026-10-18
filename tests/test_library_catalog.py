@@ -146,51 +146,80 @@ class CatalogTests(unittest.TestCase):
 
     def test_downloads_plugin_only_when_game_is_detected(self):
         self.repo.publish(plugin())
-        self.assertEqual(self.cat.sync([], {}), [])                 # game not on this PC
+        self.assertEqual(self.cat.sync([]), [])                 # game not on this PC
         self.assertEqual(self.downloads(), [])
-        msgs = self.cat.sync(DETECTED, {})
-        self.assertEqual(msgs, ["Added support for New Game (plugin v1)"])
+        msgs = self.cat.sync(DETECTED)
+        self.assertEqual(msgs, ["Added support for New Game"])
         self.assertTrue((self.dir / "games" / "newgame.json").exists())
 
     def test_downloaded_plugin_is_loaded(self):
         self.repo.publish(plugin())
-        self.cat.sync(DETECTED, {})
+        self.cat.sync(DETECTED)
         games = load_all(catalog_dir=self.dir / "games", include_user=False)
         self.assertEqual(games["newgame"].source, "catalog")
 
     def test_no_redownload_when_up_to_date(self):
         self.repo.publish(plugin())
-        self.cat.sync(DETECTED, {})
+        self.cat.sync(DETECTED)
         n = len(self.downloads())
-        self.cat.sync(DETECTED, {"newgame": 1})
+        self.cat.sync(DETECTED)
         self.assertEqual(len(self.downloads()), n)
 
     def test_index_uses_etag(self):
         self.repo.publish(plugin())
-        self.cat.sync(DETECTED, {})
-        self.cat.sync(DETECTED, {"newgame": 1})
+        self.cat.sync(DETECTED)
+        self.cat.sync(DETECTED)
         self.assertEqual(self.repo.calls[-1], ("_index.json", self.repo.etag))   # sent the stored ETag
         self.assertIn("up to date", self.cat.status)
 
-    def test_newer_version_replaces_older(self):
+    def test_changed_content_is_updated_without_any_version_bump(self):
         self.repo.publish(plugin(version=1))
-        self.cat.sync(DETECTED, {})
-        self.repo.publish(plugin(version=2, notes="new"), version=2)
-        msgs = self.cat.sync(DETECTED, {"newgame": 1})
-        self.assertEqual(msgs, ["Added support for New Game (plugin v2)"])
-        self.assertEqual(self.cat.local_versions()["newgame"], 2)
+        self.cat.sync(DETECTED)
+        self.repo.publish(plugin(version=1, notes="edited on GitHub"), version=1)      # same version number, new content
+        msgs = self.cat.sync(DETECTED)
+        self.assertEqual(msgs, ["Updated support for New Game"])
+        self.assertIn("edited on GitHub", (self.dir / "games" / "newgame.json").read_text(encoding="utf-8"))
+
+    def test_nothing_is_downloaded_when_the_bundled_copy_is_already_current(self):
+        body = plugin()
+        bundled = Path(tempfile.mkdtemp(prefix="wl-bundled-"))
+        (bundled / "newgame.json").write_bytes(body)
+        cat = Catalog(repo="me/wl", directory=Path(tempfile.mkdtemp(prefix="wl-cat2-")), fetch=self.repo,
+                      app_version="1.0.0", bundled_dir=bundled)
+        self.repo.publish(body)
+        self.assertEqual(cat.sync(DETECTED), [])
+        self.assertEqual(self.downloads(), [])
+        self.repo.publish(plugin(notes="newer than the bundled one"))
+        self.assertEqual(cat.sync(DETECTED), ["Updated support for New Game"])
+
+    def test_line_endings_do_not_cause_redownloads(self):
+        body = plugin()
+        self.repo.publish(body)
+        self.cat.sync(DETECTED)
+        (self.dir / "games" / "newgame.json").write_bytes(body.replace(b"\n", b"\r\n"))   # Windows-style copy
+        n = len(self.downloads())
+        self.cat.sync(DETECTED)
+        self.assertEqual(len(self.downloads()), n)
+
+    def test_new_app_version_drops_downloaded_copies_and_repulls(self):
+        self.repo.publish(plugin())
+        self.cat.sync(DETECTED)
+        self.assertTrue((self.dir / "games" / "newgame.json").exists())
+        newer = Catalog(repo="me/wl", directory=self.dir, fetch=self.repo, app_version="1.1.0")    # app was updated
+        self.assertFalse((self.dir / "games" / "newgame.json").exists())
+        self.assertEqual(newer.sync(DETECTED), ["Added support for New Game"])
 
     def test_hash_mismatch_is_rejected(self):
         self.repo.publish(plugin())
         self.repo.files["newgame.json"] = plugin(notes="tampered")
-        msgs = self.cat.sync(DETECTED, {})
+        msgs = self.cat.sync(DETECTED)
         self.assertIn("SHA-256", msgs[0])
         self.assertFalse((self.dir / "games" / "newgame.json").exists())
 
     def test_invalid_plugin_is_rejected_even_with_right_hash(self):
         bad = plugin(evil_field=1)
         self.repo.publish(bad)
-        msgs = self.cat.sync(DETECTED, {})
+        msgs = self.cat.sync(DETECTED)
         self.assertIn("not a valid plugin", msgs[0])
         self.assertFalse((self.dir / "games" / "newgame.json").exists())
 
@@ -199,16 +228,16 @@ class CatalogTests(unittest.TestCase):
         idx = json.loads(self.repo.files["_index.json"])
         idx["games"][0]["file"] = "../../evil.json"
         self.repo.files["_index.json"] = json.dumps(idx).encode()
-        self.assertEqual(self.cat.sync(DETECTED, {}), [])
+        self.assertEqual(self.cat.sync(DETECTED), [])
 
     def test_private_repo_reports_status_not_crash(self):
         self.repo.index_status = 404
-        self.assertEqual(self.cat.sync(DETECTED, {}), [])
+        self.assertEqual(self.cat.sync(DETECTED), [])
         self.assertIn("unavailable", self.cat.status)
 
     def test_plugin_needing_newer_app_is_skipped(self):
         self.repo.publish(plugin(), min_app="9.0.0")
-        msgs = self.cat.sync(DETECTED, {})
+        msgs = self.cat.sync(DETECTED)
         self.assertIn("needs a newer WandLike", msgs[0])
         self.assertEqual(self.downloads(), [])
 
@@ -221,13 +250,18 @@ class CatalogTests(unittest.TestCase):
 
 
 class PluginLoading(unittest.TestCase):
-    def test_higher_version_wins_and_user_overrides(self):
+    def test_downloaded_plugin_replaces_bundled_and_user_overrides_both(self):
         bundled, cat = Path(tempfile.mkdtemp()), Path(tempfile.mkdtemp())
-        (bundled / "newgame.json").write_bytes(plugin(version=1))
-        (cat / "newgame.json").write_bytes(plugin(version=3, notes="catalog"))
+        (bundled / "newgame.json").write_bytes(plugin(notes="bundled"))
+        self.assertEqual(load_all(bundled, include_user=False, catalog_dir=cat)["newgame"].source, "bundled")
+        (cat / "newgame.json").write_bytes(plugin(notes="catalog"))             # same version number on purpose
         g = load_all(bundled, include_user=False, catalog_dir=cat)["newgame"]
-        self.assertEqual((g.version, g.source), (3, "catalog"))
-        (cat / "newgame.json").write_bytes(plugin(version=0, notes="old"))
+        self.assertEqual((g.notes, g.source), ("catalog", "catalog"))
+
+    def test_broken_downloaded_plugin_falls_back_to_bundled(self):
+        bundled, cat = Path(tempfile.mkdtemp()), Path(tempfile.mkdtemp())
+        (bundled / "newgame.json").write_bytes(plugin())
+        (cat / "newgame.json").write_bytes(b"{ not json")
         self.assertEqual(load_all(bundled, include_user=False, catalog_dir=cat)["newgame"].source, "bundled")
 
     def test_strict_schema(self):

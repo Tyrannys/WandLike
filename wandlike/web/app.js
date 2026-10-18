@@ -209,7 +209,16 @@ function pageSettings() {
 /* chrome -------------------------------------------------------------- */
 function applyState(st) {
   S.st = st;
-  if (S.rev !== undefined && st.rev !== S.rev) { S.rev = st.rev; call('bootstrap').then((b) => { S.boot = b; if (['home', 'library', 'explore'].includes(S.page)) render(); }); }
+  for (const n of st.notices || []) if (n.id > (S.noticeSeen || 0)) { S.noticeSeen = n.id; if (S.noticeInit) toast(n.text, 'info'); }
+  S.noticeInit = true;   // notices that already existed when the window opened are not replayed
+  if (S.rev !== undefined && st.rev !== S.rev) {
+    S.rev = st.rev;
+    call('bootstrap').then(async (b) => {
+      S.boot = b;
+      if (S.page === 'game' && S.gid && b.games.some((x) => x.id === S.gid)) S.game = await call('game', S.gid);   // plugin updated: reload its cheats
+      if (['home', 'library', 'explore', 'game'].includes(S.page)) render();
+    });
+  }
   S.rev = st.rev;
   const live = Object.values(st.running).some(Boolean);
   const pill = document.getElementById('upd-pill');
