@@ -1,7 +1,7 @@
 name: catalog-index
-# Game plugins are pulled by the launcher straight from this repo. Whenever a plugin changes on main,
-# regenerate wandlike/games/_index.json (content hashes) so installed launchers notice the update.
-# No plugin version bump and no app release is needed.
+# Game definitions are pulled by installed apps straight from this repo. Whenever one changes on main,
+# regenerate wandlike/games/_index.json (content hashes) so installed apps notice the update.
+# No version bump and no app release is needed.
 on:
   push:
     branches: [main]
@@ -12,13 +12,17 @@ permissions:
   contents: write
 jobs:
   index:
-    runs-on: windows-latest   # the plugin loader imports Windows-only modules
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
+      - name: Build hexctl
+        shell: pwsh
+        run: |
+          . ./tools/vsenv.ps1
+          cmake -S . -B build/win -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/win --target hexctl
       - name: Regenerate the index
-        run: python tools/make_catalog.py
+        run: build/win/hexctl.exe catalog
       - name: Commit it if it changed
         shell: bash
         run: |
