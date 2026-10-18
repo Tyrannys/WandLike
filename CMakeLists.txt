@@ -39,6 +39,7 @@ target_link_libraries(hexcore PUBLIC winhttp bcrypt advapi32 shell32 ole32 versi
 file(GLOB HX_TEST_SOURCES CONFIGURE_DEPENDS tests/*.cpp)
 add_executable(hextests ${HX_TEST_SOURCES})
 target_link_libraries(hextests PRIVATE hexcore)
+target_compile_definitions(hextests PRIVATE HX_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 enable_testing()
 add_test(NAME unit COMMAND hextests)
 
