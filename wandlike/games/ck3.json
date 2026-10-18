@@ -4,24 +4,32 @@
   "exe": "ck3.exe",
   "window_title": "Crusader Kings III",
   "steam_appid": 1158310,
-  "version": 3,
-  "min_app": "1.2.0",
+  "version": 4,
+  "min_app": "1.3.0",
   "match": {"steam_appid": 1158310},
   "hook": {"symbols": {
     "paused": {"type": "uint8", "section": ".text",
                "aob": "48 8B 0D ?? ?? ?? ?? 41 B8 FF FF FF FF 0F B6 51 20 E9",
-               "rip": {"disp_at": 3, "insn_len": 7}, "deref": [32]}
+               "rip": {"disp_at": 3, "insn_len": 7}, "deref": [32]},
+    "console": {"type": "uint8", "section": ".text",
+                "aob": "44 0F B6 35 ?? ?? ?? ?? 48 89 41 08 48 89 41 18 48 C7 41 20 0F 00 00 00 88 41 08 C7 44 24 20 01 00 00 00 C6 01 01 45 84 F6",
+                "rip": {"disp_at": 4, "insn_len": 8}}
   }},
-  "launch_args": "-debug_mode",
-  "notes": "Drives the in-game debug console (requires -debug_mode; not available in Ironman). Using the console disables achievements for that save. Status: tested = confirmed working in CK3 1.20.1.1; parsed = accepted by the game's script parser (needs a DLC/government to observe); wiki = documented on the CK3 wiki; inferred = built from documented script values.",
+  "launch_args": "",
+  "notes": "Every cheat needs the game hooked (press Hook). Console cheats also need Enable Console switched on: it sets the byte the game checks before opening its console, so no -debug_mode launch option is needed (it also turns on the game's debug tooltips while it is on). Using the console disables achievements for that save. Status: tested = confirmed working in CK3 1.20.1.1; parsed = accepted by the game's script parser (needs a DLC/government to observe); wiki = documented on the CK3 wiki; inferred = built from documented script values.",
   "console": {
     "toggle_scancode": 41,
     "open_delay": 0.25,
     "line_delay": 0.15,
     "type_delay": 0.008,
-    "close_after": true
+    "close_after": true,
+    "requires_symbol": "console"
   },
   "cheats": [
+    {"id": "enable_console", "label": "Enable Console", "kind": "toggle",
+     "info": "Lets you open the game's console (the ` key) without launching with -debug_mode. Needed for the console-based cheats below. It sets the game's debug flag, so debug tooltips appear while it is on; the original value is restored when you turn it off or unhook.",
+     "memory": {"symbol": "console", "on": 1, "off": 0, "lock": 0.25, "restore": true}, "verified": "tested"},
+
     {"id": "money", "label": "Set Money", "kind": "number", "info": "Sets your gold. '+' mode adds instead (wiki-verified `gold <n>`).",
      "set": "effect add_gold = {{ value = {value} subtract = gold }}", "add": "gold {value}", "default": 1000, "step": 1000, "verified": "tested"},
 
@@ -75,9 +83,6 @@
      "on": ["effect every_sub_realm_county = { change_county_control = 100 }"], "interval": 15, "verified": "parsed"},
 
     {"id": "freeze_time", "label": "Freeze Time", "kind": "toggle", "info": "Keeps the game paused, even if you press Space or click play. Needs the game to be hooked (press Hook). Event pop-ups still pause the game by themselves.",
-     "memory": {"symbol": "paused", "on": 1, "off": 0, "lock": 0.02}, "verified": "tested"},
-
-    {"id": "launch_debug", "label": "Enable Console", "kind": "button", "info": "Launches CK3 through Steam with -debug_mode so the console works. Close the game first.",
-     "launch": true, "verified": "wiki"}
+     "memory": {"symbol": "paused", "on": 1, "off": 0, "lock": 0.02}, "verified": "tested"}
   ]
 }

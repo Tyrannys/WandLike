@@ -4,14 +4,14 @@
     {
       "id": "ck3",
       "name": "Crusader Kings III",
-      "version": 3,
+      "version": 4,
       "file": "ck3.json",
-      "sha256": "f6e640c79c4cfb2aeeae843976c7ac33e70ccef61a16b668506571ca40849079",
+      "sha256": "edae8a56ca19f3f91158a8d351a2c4c84d6e0827d721a5665ecc92f4a77709ef",
       "match": {
         "steam_appid": 1158310
       },
-      "cheats": 20,
-      "min_app": "1.2.0"
+      "cheats": 21,
+      "min_app": "1.3.0"
     }
   ]
 }

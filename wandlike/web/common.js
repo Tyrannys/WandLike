@@ -90,7 +90,7 @@ function closeModal() { document.getElementById('scrim').classList.remove('show'
 const fmt = (v) => (Number.isInteger(+v) ? String(Math.trunc(+v)) : String(v));
 function cheatRow(g, c, ctx) {
   /* ctx: { st(): latest state, onChange(): rerender, compact: bool } */
-  const row = h('div', { class: 'row' + (c.available ? '' : ' dis'), 'data-cid': c.id });
+  const row = h('div', { class: 'row' + (c.available ? '' : ' dis'), 'data-cid': c.id, 'data-src': c.source });
   const tip = [c.info, c.requires && `Requires: ${c.requires}`, `[${c.verified}] ${c.unsupported || ''}`].filter(Boolean).join('\n\n');
   row.append(h('span', { class: 'bolt', html: icon(c.kind === 'button' ? 'play' : 'bolt') }), h('span', { class: 'nm' }, c.label),
     h('span', { class: 'info', title: tip }, 'i'));
@@ -120,7 +120,7 @@ function cheatRow(g, c, ctx) {
     const apply = async () => {
       const raw = +input.value; if (Number.isNaN(raw)) return toast(`${c.label}: not a number`);
       const r = await call('set_number', g.id, c.id, raw, c.mode); input.value = fmt(r.value);
-      if (!r.ok) return toast(c.label + ': hook the game first (press Hook)');
+      if (!r.ok) return toast(c.label + ': ' + (r.error || 'not applied'));
       ok.classList.add('done'); setTimeout(() => ok.classList.remove('done'), 900);
     };
     ok.onclick = apply; input.onkeydown = (e) => { if (e.key === 'Enter') apply(); e.stopPropagation(); };
@@ -128,14 +128,14 @@ function cheatRow(g, c, ctx) {
   } else if (c.kind === 'toggle') {
     const off = h('button', { 'data-v': '0' }, 'Off'), on = h('button', { 'data-v': '1' }, 'On');
     const seg = h('div', { class: 'seg', 'data-seg': c.id }, off, on);
-    const set = async (v) => { if (!c.available) return toast(c.unsupported || 'Not available'); const ok = await call('set_toggle', g.id, c.id, v); paintSeg(seg, ok); if (v && !ok) toast(c.label + ': hook the game first (press Hook)'); };
+    const set = async (v) => { if (!c.available) return toast(c.unsupported || 'Not available'); const r = await call('set_toggle', g.id, c.id, v); paintSeg(seg, r.on); if (!r.ok) toast(c.label + ': ' + (r.error || 'not applied')); };
     off.onclick = () => set(false); on.onclick = () => set(true);
     paintSeg(seg, !!(ctx.st().toggles[g.id] || {})[c.id]);
     row.append(seg);
     row.append(c.options.length ? h('button', { class: 'gear', title: 'Options', html: icon('sliders'), onclick: () => optionsModal(g, c) })
       : h('span', { class: 'gear ph' }));
   } else {
-    row.append(h('button', { class: 'runbtn', onclick: () => call('press', g.id, c.id) }, c.launch ? 'Launch' : 'Run'));
+    row.append(h('button', { class: 'runbtn', onclick: async () => { const r = await call('press', g.id, c.id); if (!r.ok) toast(c.label + ': ' + (r.error || 'not applied')); } }, c.launch ? 'Launch' : 'Run'));
   }
   if (!ctx.compact) {
     const pin = h('button', { class: 'pin' + (c.pinned ? ' on' : ''), title: c.pinned ? 'Unpin' : 'Pin to overlay', html: icon('pin') });
@@ -156,6 +156,25 @@ function optionsModal(g, c) {
     return h('div', { class: 'field' }, h('label', {}, o.label), inp);
   });
   openModal(h('div', {}, h('h3', {}, c.label), h('p', {}, 'Options'), fields, h('div', { class: 'mrow' }, h('button', { class: 'btn sm primary', onclick: closeModal }, 'Done'))));
+}
+/* Every cheat needs the game hooked; console cheats also need the console enabled. */
+function lockReason(g, c, st) {
+  if (c.source === 'launch') return '';
+  if (!(st.hooked || {})[g.id]) return 'Hook the game first (press Hook)';
+  if (c.source === 'console' && g.needs_console && (st.console_ready || {})[g.id] === false) return 'Turn on Enable Console first';
+  return '';
+}
+function applyLocks(root, g, st) {
+  const reasons = new Set();
+  root.querySelectorAll('.row[data-cid]').forEach((row) => {
+    const c = g.cheats.find((x) => x.id === row.dataset.cid);
+    if (!c || !c.available) return;
+    const why = lockReason(g, c, st);
+    row.classList.toggle('locked', !!why);
+    row.title = why;
+    if (why) reasons.add(why);
+  });
+  return [...reasons];
 }
 function syncToggles(root, g, st) {
   root.querySelectorAll('[data-seg]').forEach((seg) => paintSeg(seg, !!(st.toggles[g.id] || {})[seg.dataset.seg]));

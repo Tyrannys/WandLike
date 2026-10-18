@@ -35,10 +35,12 @@ def console_lines(cheat: Cheat, action: str, value: float | None = None, mode: s
 class ConsoleDriver:
     """Types commands into the game's in-game console. dry_run just logs them."""
 
-    def __init__(self, game: Game, log: Callable[[str], None], dry_run: bool = False):
+    def __init__(self, game: Game, log: Callable[[str], None], dry_run: bool = False,
+                 ready: Callable[[], tuple[bool, str]] | None = None):
         self.game, self.log, self.dry_run = game, log, dry_run
         self.cfg = game.console
         self.hwnd: int | None = None
+        self.ready = ready      # () -> (ok, reason); typing into a closed console would send keystrokes to the game
 
     def attach(self) -> bool:
         from . import winapi
@@ -49,6 +51,10 @@ class ConsoleDriver:
     def send(self, lines: list[str]) -> None:
         if not lines:
             return
+        if self.ready:
+            ok, why = self.ready()
+            if not ok:
+                raise RuntimeError(why)
         if self.dry_run:
             for ln in lines:
                 self.log(f"[dry-run] {ln}")
@@ -78,12 +84,14 @@ class ConsoleDriver:
 class Engine:
     def __init__(self, game: Game, log: Callable[[str], None] = print, dry_run: bool = False):
         self.game, self.log, self.dry_run = game, log, dry_run
-        self.driver = ConsoleDriver(game, log, dry_run)
         self.hook = Hook(game, log, dry_run)
+        self.driver = ConsoleDriver(game, log, dry_run, ready=self.console_ready)
+        self.last_error = ""
         self.toggles: dict[str, bool] = {}
         self.opts: dict[str, dict] = {}
         self._last: dict[str, float] = {}
         self._lock_last: dict[str, float] = {}
+        self._orig: dict[str, float] = {}   # values to put back for memory toggles marked "restore"
         self._q: queue.Queue = queue.Queue()
         self._stop = threading.Event()
         threading.Thread(target=self._worker, daemon=True).start()
@@ -102,35 +110,56 @@ class Engine:
         return self.hook.attach()
 
     def hook_detach(self) -> None:
-        """Unhook: stop locks, put locked values back to their off state, then release the process."""
+        """Unhook: stop locks, put memory toggles back (original value if "restore", else their off value), release the game."""
         for c in self.game.cheats:
-            if c.memory and self.toggles.pop(c.id, False) and c.kind == "toggle" and "off" in c.memory:
+            if c.memory and c.kind == "toggle" and self.toggles.get(c.id):
                 try:
-                    self.hook.write(c.memory, c.memory["off"])
+                    self.hook.write(c.memory, self._off_value(c))
                 except Exception:
                     pass
+        self.toggles.clear()
+        self._orig.clear()
         self.hook.detach()
+
+    def _off_value(self, c: Cheat):
+        mem = c.memory
+        return self._orig.pop(c.id, mem.get("off", 0)) if mem.get("restore") else mem.get("off", 0)
+
+    # ------------------------------------------------------------- gating
+    def console_ready(self) -> tuple[bool, str]:
+        """Whether the game's console can be opened right now (always ready if the plugin doesn't gate it)."""
+        sym = self.game.console.get("requires_symbol")
+        if not sym:
+            return True, ""
+        try:
+            on = self.hook.read({"symbol": sym}) not in (0, 0.0)
+        except Exception as e:
+            return False, self._why(e)
+        return (True, "") if on else (False, "turn on Enable Console first")
+
+    def gate(self, cheat: Cheat) -> str | None:
+        """Why a cheat can't run right now, or None. Every cheat needs the game hooked; console cheats also
+        need the console enabled (otherwise their keystrokes would land in the game as hotkeys)."""
+        if cheat.launch:
+            return None
+        if not self.hooked:
+            return "hook the game first (press Hook)"
+        if not cheat.memory:
+            ok, why = self.console_ready()
+            if not ok:
+                return why
+        return None
+
+    def _deny(self, cheat: Cheat, why: str) -> bool:
+        self.last_error = why
+        self.log(f"! {cheat.label}: {why}")
+        return False
 
     def running(self) -> bool:
         if self.dry_run:
             return True
         from . import winapi
         return bool(winapi.find_pids(self.game.exe))
-
-    def debug_mode_detected(self) -> bool | None:
-        """True/False if we can read the process command line, else None."""
-        if self.dry_run:
-            return None
-        try:
-            out = subprocess.run(
-                ["powershell", "-NoProfile", "-Command",
-                 f"(Get-CimInstance Win32_Process -Filter \"Name='{self.game.exe}'\").CommandLine"],
-                capture_output=True, text=True, timeout=8).stdout
-        except Exception:
-            return None
-        if not out.strip():
-            return None
-        return "debug_mode" in out
 
     def _find_exe(self, install_dir: str | None):
         """The game exe inside its install folder (top level, a bin folder, or up to 3 levels down)."""
@@ -178,6 +207,10 @@ class Engine:
     # ----------------------------------------------------------- actions
     def apply_number(self, cheat: Cheat, value: float, mode: str = "set") -> bool:
         """True if applied (console commands are queued and count as applied)."""
+        self.last_error = ""
+        why = self.gate(cheat)
+        if why:
+            return self._deny(cheat, why)
         if cheat.memory:
             try:
                 if mode == "add":
@@ -185,9 +218,8 @@ class Engine:
                 self.hook.write(cheat.memory, value)
                 self.log(f"memory {cheat.id} = {value:g}")
                 return True
-            except (HookError, Exception) as e:
-                self.log(f"! {cheat.label}: {self._why(e)}")
-                return False
+            except Exception as e:
+                return self._deny(cheat, self._why(e))
         self._submit(lambda: self.driver.send(console_lines(cheat, "number", value, mode)))
         return True
 
@@ -195,14 +227,29 @@ class Engine:
         return "hook the game first (press Hook)" if str(e) == "not hooked" else str(e)
 
     def set_toggle(self, cheat: Cheat, on: bool) -> bool:
-        """True if the toggle took effect (a memory toggle fails when the game is not hooked)."""
-        if cheat.memory:
-            try:
-                self.hook.write(cheat.memory, cheat.memory["on"] if on else cheat.memory.get("off", 0))
-            except Exception as e:
-                self.log(f"! {cheat.label}: {self._why(e)}")
+        """True if the toggle is now in the requested state. Turning one ON needs the game hooked (see gate)."""
+        self.last_error = ""
+        if on:
+            why = self.gate(cheat)
+            if why:
                 self.toggles[cheat.id] = False
-                return False
+                return self._deny(cheat, why)
+        if cheat.memory:
+            mem = cheat.memory
+            try:
+                if on:
+                    if mem.get("restore") and cheat.id not in self._orig:
+                        self._orig[cheat.id] = self.hook.read(mem)
+                    value = mem["on"]
+                elif self.hooked:
+                    value = self._off_value(cheat)
+                else:
+                    self.toggles[cheat.id] = False
+                    return True
+                self.hook.write(mem, value)
+            except Exception as e:
+                self.toggles[cheat.id] = False
+                return self._deny(cheat, self._why(e))
             self.toggles[cheat.id] = on
             self._lock_last[cheat.id] = time.time()
             return True
@@ -211,17 +258,24 @@ class Engine:
             self._last[cheat.id] = time.time()  # first repeat is one interval from now
             if not on:
                 return True  # repeater stops by itself
+        if not on and not self.hooked:
+            return True  # nothing to send to a game we are not hooked to
         self._submit(lambda: self.driver.send(console_lines(cheat, "on" if on else "off")))
         return True
 
     def set_option(self, cheat: Cheat, opt_id: str, value) -> None:
         self.opts.setdefault(cheat.id, {})[opt_id] = value
 
-    def press(self, cheat: Cheat) -> None:
+    def press(self, cheat: Cheat) -> bool:
+        self.last_error = ""
+        why = self.gate(cheat)
+        if why:
+            return self._deny(cheat, why)
         if cheat.launch:
             self.launch()
         else:
             self._submit(lambda: self.driver.send(console_lines(cheat, "press")))
+        return True
 
     # ----------------------------------------------------------- workers
     def _submit(self, fn: Callable[[], None]) -> None:
@@ -240,7 +294,7 @@ class Engine:
         while not self._stop.is_set():
             now = time.time()
             for c in self.game.cheats:
-                if c.kind == "toggle" and c.interval and self.toggles.get(c.id):
+                if c.kind == "toggle" and c.interval and self.toggles.get(c.id) and self.gate(c) is None:
                     every = float(self.opts.get(c.id, {}).get("interval", c.interval))
                     if now - last.get(c.id, 0) >= every:
                         last[c.id] = now

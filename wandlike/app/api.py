@@ -129,12 +129,14 @@ class Api:
                 "requires": c.requires, "verified": c.verified, "unsupported": c.unsupported,
                 "available": c.available, "default": c.default, "min": c.min, "max": c.max, "step": c.step,
                 "has_modes": bool(c.add and c.set), "launch": c.launch,
+                "source": "launch" if c.launch else "memory" if c.memory else "console",
                 "options": [{**o, "value": opts.get(c.id, {}).get(o["id"], o.get("default"))} for o in c.options],
                 "pinned": c.id in d.get("pins", []), "hotkey": hk.get(c.id, ""),
                 "value": vals.get(c.id, c.default), "mode": modes.get(c.id, "set"),
             })
         return {**self._game_card(g), "notes": g.notes, "cheats": cheats, "auto_apply": d.get("auto_apply", False),
                 "has_preset": bool(d.get("preset")), "running": self._running.get(gid, False),
+                "needs_console": bool(g.console.get("requires_symbol")), "hooked": eng.hooked,
                 "toggles": dict(eng.toggles)}
 
     def art(self, gid: str, kind: str) -> str:
@@ -148,6 +150,8 @@ class Api:
                 "progress": self._progress, "hk_errors": dict(self._hk_errors),
                 "overlay": self._overlay_visible, "active": self._active, "rev": self._rev,
                 "hooked": {gid: e.hooked for gid, e in self._engines.items()},
+                "console_ready": {gid: e.console_ready()[0] for gid, e in self._engines.items()
+                                  if e.game.console.get("requires_symbol")},
                 "catalog": {"status": self._catalog.status, "last_sync": self._catalog.last_sync},
                 "library": {"count": len(self._detected), "scanned_at": self._library.scanned_at}}
 
@@ -155,14 +159,15 @@ class Api:
     def set_number(self, gid: str, cid: str, value: float, mode: str = "set"):
         c = self._cheat(gid, cid)
         value = max(c.min, min(c.max, float(value)))
-        ok = self._engine(gid).apply_number(c, value, mode)
+        eng = self._engine(gid)
+        ok = eng.apply_number(c, value, mode)
         d = self._g(gid)
         d.setdefault("values", {})[cid] = value
         d.setdefault("modes", {})[cid] = mode
         self._settings.set(f"g.{gid}", d)
         if ok:
             self._applied.setdefault(gid, {})[cid] = [value, mode]
-        return {"value": value, "ok": ok}
+        return {"value": value, "ok": ok, "error": "" if ok else eng.last_error}
 
     def remember_value(self, gid: str, cid: str, value: float, mode: str = "set"):
         d = self._g(gid)
@@ -171,13 +176,18 @@ class Api:
         self._settings.set(f"g.{gid}", d)
 
     def set_toggle(self, gid: str, cid: str, on: bool):
+        """{on, ok, error}: `on` is the state now in effect, `error` says why a request was refused."""
         c = self._cheat(gid, cid)
         if not c.available:
-            return False
-        return self._engine(gid).set_toggle(c, bool(on)) and bool(on)
+            return {"on": False, "ok": False, "error": c.unsupported or "Not available"}
+        eng = self._engine(gid)
+        ok = eng.set_toggle(c, bool(on))
+        return {"on": bool(on) and ok, "ok": ok, "error": "" if ok else eng.last_error}
 
     def press(self, gid: str, cid: str):
-        self._engine(gid).press(self._cheat(gid, cid))
+        eng = self._engine(gid)
+        ok = eng.press(self._cheat(gid, cid))
+        return {"ok": ok, "error": "" if ok else eng.last_error}
 
     def set_option(self, gid: str, cid: str, opt_id: str, value):
         c = self._cheat(gid, cid)
@@ -208,7 +218,8 @@ class Api:
         if not p:
             self._say("No saved cheats yet")
             return
-        for cid in p["toggles"]:
+        g = self._games[gid]
+        for cid in sorted(p["toggles"], key=lambda i: 0 if g.cheat(i).memory else 1):   # Enable Console before console cheats
             self.set_toggle(gid, cid, True)
         for cid, (v, mode) in p["numbers"].items():
             self.set_number(gid, cid, v, mode)
@@ -479,7 +490,7 @@ class Api:
                 if now and not was:
                     self._gset(gid, last_played=int(time.time()))
                     self._say(f"{g.name} detected")
-                    if self.app()["auto_hook"] and g.hook.get("symbols"):
+                    if self.app()["auto_hook"]:
                         threading.Thread(target=self._auto_hook, args=(gid,), daemon=True).start()
                     if self._g(gid).get("auto_apply") and self._g(gid).get("preset"):
                         threading.Thread(target=self._auto_apply, args=(gid,), daemon=True).start()

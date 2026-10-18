@@ -112,6 +112,9 @@ def _validate_hook(g: Game) -> None:
             raise ValueError(f"symbol {name}: needs an \"aob\" pattern (or an \"rva\" with \"exe_size\")")
         if "rip" in spec and set(spec["rip"]) != {"disp_at", "insn_len"}:
             raise ValueError(f"symbol {name}: rip needs exactly disp_at and insn_len")
+    req = g.console.get("requires_symbol")
+    if req is not None and req not in symbols:
+        raise ValueError(f"console.requires_symbol {req!r} is not defined under hook.symbols")
     for c in g.cheats:
         sym = (c.memory or {}).get("symbol")
         if sym is not None and sym not in symbols:

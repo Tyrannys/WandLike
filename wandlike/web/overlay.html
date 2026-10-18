@@ -31,7 +31,7 @@
       const gid = running || O.st.active;
       const sig = gid + JSON.stringify(O.st.toggles[gid] || {}).length;
       if (gid && (gid !== O.gid || !O.game)) { O.gid = gid; O.game = await call('game', gid); O.key = ''; draw(); }
-      else if (O.game) { syncToggles(document.getElementById('ov-list'), O.game, O.st); }
+      else if (O.game) { syncToggles(document.getElementById('ov-list'), O.game, O.st); applyLocks(document.getElementById('ov-list'), O.game, O.st); }
     } catch (e) {}
     setTimeout(tick, 1200);
   }
@@ -42,6 +42,7 @@
     let cs = g.cheats.filter((c) => c.pinned && c.available);
     if (!cs.length) { list.append(h('div', { class: 'hint' }, 'Pin cheats in the main window (the pin icon on hover) and they show up here.')); return; }
     cs.forEach((c) => list.append(cheatRow(g, c, ctx)));
+    applyLocks(list, g, O.st);
   }
   tick();
 </script>

@@ -78,6 +78,17 @@ const pageLibrary = () => listPage('My Games', 'Supported games installed on thi
 const pageExplore = () => listPage('Explore', 'Every game WandLike supports. Support for installed games downloads automatically from the catalog.',
   [...S.boot.games, ...(S.boot.catalog_only || []).map((c) => ({ ...c, catalog: true }))]);
 
+function updateLocks() {
+  const g = S.game, list = document.getElementById('cheats'), bar = document.getElementById('lockbar');
+  if (!g || !list) return;
+  const reasons = applyLocks(list, g, S.st);
+  if (!bar) return;
+  const hooked = !!(S.st.hooked || {})[g.id];
+  bar.style.display = reasons.length ? 'flex' : 'none';
+  bar.textContent = !hooked ? 'Cheats are locked: start the game, then press Hook (the big button above).'
+    : reasons.includes('Turn on Enable Console first') ? 'Console cheats are locked: turn on Enable Console first. Memory cheats like Freeze Time already work.' : '';
+}
+
 /* The big button: Play when the game is closed, Hook when it runs, Unhook when hooked. */
 function playState(gid) {
   const run = !!S.st.running[gid], hooked = !!(S.st.hooked || {})[gid];
@@ -122,6 +133,7 @@ function pageGame() {
     h('span', { class: 'switch' + (g.auto_apply ? ' on' : ''), id: 'autosw' }), 'Auto-apply');
   autoRow.onclick = async (e) => { e.preventDefault(); g.auto_apply = !g.auto_apply; document.getElementById('autosw').classList.toggle('on', g.auto_apply); await call('set_auto_apply', g.id, g.auto_apply); };
   p.append(h('div', { class: 'toolbar' }, h('label', { class: 'search' }, h('span', { html: icon('search') }), q), autoRow));
+  p.append(h('div', { class: 'lockbar', id: 'lockbar', style: 'display:none' }));
   if (g.notes) p.append(h('div', { class: 'note', html: '<b>How it works:</b> ' + g.notes.replace(/</g, '&lt;') }));
   p.append(list);
   const fill = () => {
@@ -144,6 +156,7 @@ function pageGame() {
       if (!shut) cs.forEach((c) => list.append(cheatRow(g, c, ctx)));
     }
     if (!visible.length) list.append(h('div', { class: 'empty' }, 'No cheats match.'));
+    updateLocks();
   };
   q.oninput = fill; fill();
   return p;
@@ -214,6 +227,7 @@ function applyState(st) {
     if (pb) { pb.classList.toggle('live', ps.cls !== ''); pb.title = ps.title; pb.lastChild.textContent = ps.label; pb.firstChild.innerHTML = icon(ps.icon); }
     if (ch) { ch.classList.toggle('ok', run); ch.lastChild.textContent = ps.chip; }
     syncToggles(document.getElementById('cheats') || document, S.game, st);
+    updateLocks();
   }
   if (S.page === 'home' || S.page === 'library' || S.page === 'explore') {
     const key = JSON.stringify(st.running); if (key !== S._runKey) { S._runKey = key; render(); }

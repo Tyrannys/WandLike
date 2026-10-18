@@ -8,7 +8,7 @@ A free Wand/WeMod-style trainer framework for Windows. Every game is a small JSO
 ## The app
 - **Home / My Games / Explore**: your Steam, Epic and GOG libraries are scanned for supported games; art comes from Steam's local cache.
 - **Game page**: collapsible sections, info tooltips, number steppers with *Set / Add* mode, On/Off toggles with an options gear, search, pins, favorites.
-- **The big button** is **Play** when the game is closed, **Hook** when it is running, **Unhook** when hooked. Hooking first checks that the game is really running, then attaches to it for real-time memory cheats (see below).
+- **The big button** is **Play** when the game is closed, **Hook** when it is running, **Unhook** when hooked. Hooking first checks that the game is really running, then attaches to it. **Every cheat needs the game hooked**: until then the rows are dimmed and refused with a clear reason (the app also hooks automatically a few seconds after a game starts).
 - **Pin** cheats to get a *Pinned* section and an **in-game overlay** (default `Ctrl+Shift+F10`; run the game windowed/borderless).
 - **Global hotkeys** per cheat, with conflict detection. **Saved cheats** (bookmark icon) re-apply your setup, optionally automatically when the game starts.
 - **Settings**: hotkeys, overlay key, in-game console key, start with Windows, library rescan, catalog sync, update check.
@@ -16,20 +16,24 @@ A free Wand/WeMod-style trainer framework for Windows. Every game is a small JSO
 
 Not implemented: a phone remote and cloud sync.
 
-## Two ways cheats work
-1. **Console cheats** type commands into the game's own console (CK3: debug mode). Safe and patch-proof, but the game window briefly takes focus.
-2. **Hooked (memory) cheats** attach to the game process and read/write named memory symbols in real time, with no keystrokes. Symbols are found by **byte pattern**, so they survive game patches. If a patch breaks a pattern, only that cheat reports *"this game version isn't supported yet"*. A *lock* option keeps a value pinned (that is how **Freeze Time** keeps CK3 paused even if you press Space).
+## Two ways cheats work (both need the game hooked)
+1. **Console cheats** type commands into the game's own console. The game window briefly takes focus. If the console isn't open-able they are refused *before* anything is typed, so keystrokes can never leak into the game as hotkeys.
+2. **Memory cheats** read/write named memory symbols in real time, with no keystrokes. Symbols are found by **byte pattern**, so they survive game patches. If a patch breaks a pattern, only that cheat reports *"this game version isn't supported yet"*. A *lock* option keeps a value pinned (that is how **Freeze Time** keeps CK3 paused even if you press Space).
 
-Memory cheats need the game **hooked** (press **Hook**; WandLike also auto-hooks a few seconds after a hookable game starts, see *Settings*). Never hook a multiplayer or Ironman game.
+Hooking resolves every symbol once and is released on **Unhook** or when the game exits. Never hook a multiplayer game.
 
 ## Crusader Kings III
-1. Press **Play**. WandLike starts `ck3.exe -debug_mode` itself (Steam must be running), which avoids Steam's *Launch Game with custom arguments* prompt that `steam://` and `-applaunch` launches trigger. Or add `-debug_mode` to the Steam launch options yourself.
-2. Use a **non-Ironman** game. Console commands disable achievements for that save.
-3. Keep CK3 windowed/borderless. If your console key isn't the backtick key, change it in *Settings → In-game console key*.
-4. For **Freeze Time**, press **Hook** first.
+1. Press **Play** (starts the game normally, **no `-debug_mode` launch option**), then **Hook** once the game is running (auto-hook does this for you).
+2. Switch on **Enable Console**. It sets the byte the game checks before opening its console, so you can use the console (the `` ` `` key) and the console-based cheats without launching in debug mode. The game also clears that byte when a new game loads, so WandLike keeps it set while the toggle is on, and puts the original value back when you turn it off or unhook.
+3. Use a **non-Ironman** game you don't mind modding. Console commands disable achievements for that save.
+4. If your console key isn't the backtick key, change it in *Settings → In-game console key*.
 
-Status of each cheat (shown in its tooltip), as checked against CK3 1.20.1.1:
-- **tested**: observed working in the game: Money, Prestige, Piety, Renown, Dread, Diplomacy, Martial, Stewardship, Intrigue, Learning, Prowess, King Age, **Freeze Time**.
+What Enable Console does and doesn't do: the flag it sets is the game's general debug flag (the one `-debug_mode` also sets, along with two others it leaves alone), so while it is on the game shows its **"DEBUG:" tooltip lines**. Turning the toggle off hides them again. The console only needs the flag at the moment it is *opened*; I found no narrower switch.
+
+**Freeze Time** and **Enable Console** are memory cheats and work as soon as the game is hooked; every other CK3 cheat is a console cheat and needs Enable Console on.
+
+Status of each cheat (shown in its tooltip), as checked against CK3 1.20.1.1, **with debug mode off**:
+- **tested**: observed working in the game: Enable Console, Money, Prestige, Piety, Renown, Dread, all six skills, King Age, **Freeze Time**.
 - **parsed**: the game's script parser accepts it, but it needs a DLC/government to observe: Treasury (All Under Heaven), Influence (Roads to Power), Max County Control.
 - **wiki**: documented console command, not individually observed: Stress, Instant Construction, Instant Movement, Fast Culture Progress.
 - Notes: `Set King Age` uses `set_age` (the plain `age` console command *adds* years). Instant Movement has no "off" command in the game, so restart to clear it. Event pop-ups pause the game by a separate mechanism, so Freeze Time doesn't (and shouldn't) block them.
@@ -64,7 +68,8 @@ python -m wandlike --preview path\to\plugin.json     # the exact lines each chea
 - `kind`: `number` (`set` and/or `add` templates containing `{value}`; write literal braces as `{{ }}`), `toggle` (`on`/`off` lines, optional `interval` to repeat, optional `options`), `button` (`run` lines).
 - `verified`: `tested`, `parsed`, `wiki`, `inferred` or `unsupported` (with an `unsupported` explanation). Be honest; it shows in the tooltip.
 - **Symbols** (`hook.symbols`): `aob` is a byte pattern from the game's code (`??` = any byte). `rip` follows a RIP-relative operand to the variable it references; `deref` then follows a pointer chain (`[32]` = pointer + 0x20). `section` defaults to `.text`. A `rva` + `exe_size` can serve as a fallback for one exact build.
-- A cheat's `memory` is `{"symbol", "on", "off", "lock"}` for toggles (`lock` re-asserts the value every N seconds) or `{"symbol", "type", "scale"}` for numbers.
+- A cheat's `memory` is `{"symbol", "on", "off", "lock", "restore"}` for toggles (`lock` re-asserts the value every N seconds; `restore: true` puts the value the game had back on off/unhook instead of writing `off`) or `{"symbol", "type", "scale"}` for numbers.
+- `console.requires_symbol` names a symbol that must be non-zero before console cheats may type (CK3 uses its console flag). Without it console cheats are always allowed once hooked. Every cheat except a `launch` button needs the game hooked.
 
 ### Finding memory symbols
 `tools/` has two helpers (they need `.venv-build\Scripts\pip install capstone` for the disassembler):
