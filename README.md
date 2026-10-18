@@ -1,129 +1,153 @@
-# WandLike
+# Hexwright
 
-A free Wand/WeMod-style trainer framework for Windows. Every game is a small JSON plugin; the first is **Crusader Kings III**.
+A free, original trainer / mod launcher for **single-player** Windows games, written in C++20 with a native Dear ImGui interface.
+Attach to a running game, toggle cheats, scan memory Cheat Engine style, keep an address list, and let per-game
+definition files (JSON) do the work. The first supported game is **Crusader Kings III**.
 
-- Download the installer from the [Releases](https://github.com/Tyrannys/WandLike/releases) page (`WandLike-Setup.exe`). It installs per-user, no admin, and updates itself.
-- Or run from source: `pip install -r requirements.txt` then `python -m wandlike` (Python 3.10+, Windows 10/11, WebView2 runtime, which Windows 11 includes).
+> Formerly "WandLike". Hexwright is a complete C++ rewrite of that Python app; the game definition format is unchanged.
 
-## The app
-- **Home / My Games / Explore**: your Steam, Epic and GOG libraries are scanned for supported games; art comes from Steam's local cache.
-- **Game page**: collapsible sections, info tooltips, number steppers with *Set / Add* mode, On/Off toggles with an options gear, search, pins, favorites.
-- **The big button** is **Play** when the game is closed, **Hook** when it is running, **Unhook** when hooked. Hooking first checks that the game is really running, then attaches to it. **Every cheat needs the game hooked**: until then the rows are dimmed and refused with a clear reason (the app also hooks automatically a few seconds after a game starts).
-- **Pin** cheats to get a *Pinned* section and an **in-game overlay** (default `Ctrl+Shift+F10`; run the game windowed/borderless).
-- **Global hotkeys** per cheat, with conflict detection. **Saved cheats** (bookmark icon) re-apply your setup, optionally automatically when the game starts.
-- **Settings**: hotkeys, overlay key, in-game console key, start with Windows, library rescan, catalog sync, update check.
-- **Activity** (bottom-left) logs every command and memory write.
+- **Install:** download `Hexwright-Setup.exe` from [Releases](https://github.com/Tyrannys/WandLike/releases). It installs per user into
+  `%LOCALAPPDATA%\Hexwright` (no admin needed), adds Start menu / desktop shortcuts, and updates itself.
+- **Requirements:** Windows 10/11 x64 and a Direct3D 11 capable GPU (falls back to the software renderer). It can attach to 64-bit and 32-bit games.
 
-Not implemented: a phone remote and cloud sync.
+## Safety: single-player only
 
-## Two ways cheats work (both need the game hooked)
-1. **Console cheats** type commands into the game's own console. The game window briefly takes focus. If the console isn't open-able they are refused *before* anything is typed, so keystrokes can never leak into the game as hotkeys.
-2. **Memory cheats** read/write named memory symbols in real time, with no keystrokes. Symbols are found by **byte pattern**, so they survive game patches. If a patch breaks a pattern, only that cheat reports *"this game version isn't supported yet"*. A *lock* option keeps a value pinned (that is how **Freeze Time** keeps CK3 paused even if you press Space).
+Hexwright is built to be hard to misuse online, and there is no override:
 
-Hooking resolves every symbol once and is released on **Unhook** or when the game exits. Never hook a multiplayer game.
+- It **refuses to attach** if an anti-cheat is running (EasyAntiCheat, BattlEye, Vanguard, FACEIT, Ricochet, nProtect GameGuard, Xigncode,
+  Javelin, PunkBuster, ...) or the target is a known multiplayer / competitive game. The message says what triggered it.
+  Settings → Safety lists everything blocked.
+- No anti-cheat bypass or evasion, no driver or kernel code, no network packet manipulation.
+- It only opens the one process you pick, with the minimum rights (read, write, query), never debug or terminate rights.
+- If the game exits, everything is released cleanly and the UI tells you.
+
+## What it does
+
+- **Games**: your Steam, Epic and GOG libraries are scanned for games that have a trainer definition. Cover art comes from Steam's local cache.
+- **Trainer page**: sections, search, pins, favorites, On/Off switches, number steppers with Set / Add, per-cheat **global hotkeys**,
+  saved presets (optionally applied when the game starts), an exe-hash check that warns when the game build isn't the one the
+  definition was written for. The big button is **Play** (closed), **Hook** (running) or **Unhook** (hooked); the app also hooks by itself.
+  Every cheat needs the game hooked; console cheats also need the console to be openable (see below).
+- **Scanner**: process picker with a safety verdict, first scan (exact / unknown initial / bigger / smaller / between), next scan
+  (exact / increased / decreased / changed / unchanged / increased by / decreased by), types byte / int16 / int32 / int64 / float / double,
+  progress and cancel.
+- **Address list**: add scan results or a pointer chain (`game.exe+5C7E378,20,8`), edit values, **freeze** them, save / load per game
+  (`%APPDATA%\Hexwright\tables\<exe>.json`). Entries inside a module are stored module-relative so they survive restarts.
+- **AOB scan**: find a byte pattern with wildcards in the main module's code.
+- **Overlay**: a small always-on-top list of active cheats (default `Ctrl+Shift+F10`; run the game windowed or borderless).
+- **Settings**: hotkeys, overlay key, console key, start with Windows, library rescan, catalog sync, update check.
+
+## Two ways cheats work
+
+1. **Console cheats** type commands into the game's own console. The game window briefly takes focus. If the console can't be opened the
+   cheat is refused *before* anything is typed, so keystrokes can never land in the game as hotkeys.
+2. **Memory cheats** read and write named memory symbols with no keystrokes. Symbols are found by **byte pattern**, so they survive
+   game patches; if a patch breaks one, only that cheat reports "this game version isn't supported yet". A *lock* keeps a value pinned.
+
+Run the game, **Hook**, and unhook (or exit the game) when you are done: toggled memory cheats restore the game's own values.
 
 ## Crusader Kings III
-1. Press **Play** (starts the game normally, **no `-debug_mode` launch option**), then **Hook** once the game is running (auto-hook does this for you).
-2. Switch on **Enable Console**. It sets the byte the game checks before opening its console, so you can use the console (the `` ` `` key) and the console-based cheats without launching in debug mode. The game also clears that byte when a new game loads, so WandLike keeps it set while the toggle is on, and puts the original value back when you turn it off or unhook.
-3. Use a **non-Ironman** game you don't mind modding. Console commands disable achievements for that save.
-4. If your console key isn't the backtick key, change it in *Settings → In-game console key*.
 
-What Enable Console does and doesn't do: the flag it sets is the game's general debug flag (the one `-debug_mode` also sets, along with two others it leaves alone), so while it is on the game shows its **"DEBUG:" tooltip lines**. Turning the toggle off hides them again. The console only needs the flag at the moment it is *opened*; I found no narrower switch.
+1. Press **Play** (normal launch, **no `-debug_mode` option**). Hexwright hooks once the game is running.
+2. Switch on **Enable Console**. It sets the byte the game checks before opening its console, so the console (the `` ` `` key) and the
+   console-based cheats work without debug mode. The game clears that byte when a new game loads, so Hexwright keeps it set while the
+   toggle is on and puts the original value back when you turn it off or unhook. While it is on the game shows its "DEBUG:" tooltips.
+3. Use a **non-Ironman** game you don't mind modding: console commands disable achievements for that save.
+4. If your console key isn't backtick, set it in Settings.
 
-**Freeze Time** and **Enable Console** are memory cheats and work as soon as the game is hooked; every other CK3 cheat is a console cheat and needs Enable Console on.
+**Freeze Time** and **Enable Console** are memory cheats and work as soon as the game is hooked; every other CK3 cheat is a console cheat.
+Each cheat's tooltip says how it was checked (tested / parsed / wiki). Tested on CK3 1.20.1.1: Enable Console, Money, Prestige, Piety, Renown,
+Dread, the six skills, King Age and Freeze Time.
 
-Status of each cheat (shown in its tooltip), as checked against CK3 1.20.1.1, **with debug mode off**:
-- **tested**: observed working in the game: Enable Console, Money, Prestige, Piety, Renown, Dread, all six skills, King Age, **Freeze Time**.
-- **parsed**: the game's script parser accepts it, but it needs a DLC/government to observe: Treasury (All Under Heaven), Influence (Roads to Power), Max County Control.
-- **wiki**: documented console command, not individually observed: Stress, Instant Construction, Instant Movement, Fast Culture Progress.
-- Notes: `Set King Age` uses `set_age` (the plain `age` console command *adds* years). Instant Movement has no "off" command in the game, so restart to clear it. Event pop-ups pause the game by a separate mechanism, so Freeze Time doesn't (and shouldn't) block them.
+## Writing a trainer definition
 
-## Making a game plugin
-A plugin is one JSON file. The helpers below work from source (`python -m wandlike ...`) or the debug exe.
-
-```
-python -m wandlike --find-games stellaris           # see what your libraries contain (store, id, folder)
-python -m wandlike --new-game stellaris              # write a starter plugin (store id, exe guessed from the install folder)
-python -m wandlike --validate path\to\plugin.json    # clear errors, typo suggestions ("did you mean set?")
-python -m wandlike --preview path\to\plugin.json     # the exact lines each cheat would type, no game needed
-```
-`--new-game` writes to `wandlike/games/` when run from source, or to your plugins folder (`%APPDATA%\WandLike\games`, *Settings → Open folder*) from an installed build. Plugins in that folder load immediately and override catalog versions.
+A definition is one JSON file; the full reference is in [docs/TRAINER_FORMAT.md](docs/TRAINER_FORMAT.md). A taste:
 
 ```json
-{ "id": "mygame", "name": "My Game", "version": 1, "match": {"steam_appid": 12345},
-  "exe": "game.exe", "window_title": "My Game", "launch_args": "-console",
+{ "id": "mygame", "name": "My Game", "exe": "game.exe", "window_title": "My Game",
+  "match": {"steam_appid": 12345},
   "console": {"toggle_scancode": 41},
-  "cheats": [
-    {"id": "gold", "label": "Set Gold", "kind": "number", "info": "Sets your gold.",
-     "set": "setgold {value}", "add": "addgold {value}", "default": 1000, "step": 1000},
-    {"id": "god",  "label": "God Mode", "kind": "toggle", "on": ["tgm"], "off": ["tgm"]},
-    {"id": "freeze", "label": "Freeze Time", "kind": "toggle",
-     "memory": {"symbol": "paused", "on": 1, "off": 0, "lock": 0.02}}
-  ],
   "hook": {"symbols": {"paused": {
       "type": "uint8", "aob": "48 8B 0D ?? ?? ?? ?? 41 B8 FF FF FF FF 0F B6 51 20 E9",
-      "rip": {"disp_at": 3, "insn_len": 7}, "deref": [32]}}}}
+      "rip": {"disp_at": 3, "insn_len": 7}, "deref": [32]}}},
+  "cheats": [
+    {"id": "gold", "label": "Set Gold", "kind": "number", "set": "setgold {value}", "add": "addgold {value}", "default": 1000, "step": 1000},
+    {"id": "god", "label": "God Mode", "kind": "toggle", "on": ["tgm"], "off": ["tgm"]},
+    {"id": "freeze", "label": "Freeze Time", "kind": "toggle", "memory": {"symbol": "paused", "on": 1, "off": 0, "lock": 0.02}}
+  ] }
 ```
-- `match` says how the game is recognised: `{"steam_appid": N}`, `{"epic": "<AppName>"}` or `{"gog": "<id>"}`.
-- `kind`: `number` (`set` and/or `add` templates containing `{value}`; write literal braces as `{{ }}`), `toggle` (`on`/`off` lines, optional `interval` to repeat, optional `options`), `button` (`run` lines).
-- `verified`: `tested`, `parsed`, `wiki`, `inferred` or `unsupported` (with an `unsupported` explanation). Be honest; it shows in the tooltip.
-- **Symbols** (`hook.symbols`): `aob` is a byte pattern from the game's code (`??` = any byte). `rip` follows a RIP-relative operand to the variable it references; `deref` then follows a pointer chain (`[32]` = pointer + 0x20). `section` defaults to `.text`. A `rva` + `exe_size` can serve as a fallback for one exact build.
-- A cheat's `memory` is `{"symbol", "on", "off", "lock", "restore"}` for toggles (`lock` re-asserts the value every N seconds; `restore: true` puts the value the game had back on off/unhook instead of writing `off`) or `{"symbol", "type", "scale"}` for numbers.
-- `console.requires_symbol` names a symbol that must be non-zero before console cheats may type (CK3 uses its console flag). Without it console cheats are always allowed once hooked. Every cheat except a `launch` button needs the game hooked.
 
-### Finding memory symbols
-`tools/` has two helpers (they need `.venv-build\Scripts\pip install capstone` for the disassembler):
-- `tools/find_flag.py`: differences memory snapshots while you flip an in-game on/off state (it presses a key for you) and lists candidate flag bytes (`--heap` also scans private memory).
-- `tools/pe_re.py`: loads the game exe from disk, finds MSVC RTTI vtables by class name and disassembles functions. That is how CK3's pause byte was found: the pause-command class reads `[global + 0x20]`, and the code around that read became the byte pattern.
-Always test a candidate by writing it and watching the game, and check the pattern matches exactly once in the exe.
+`hexctl` (built next to the app, also attached to releases) helps you author them:
 
-## Game library and catalog
-- **Library scan** (`core/library.py`): Steam (all library folders), Epic (launcher manifests) and GOG (registry). Cached in `%APPDATA%\WandLike\library_cache.json`: manifests are re-read only if their size/mtime changed and folders re-listed only if their mtime changed, so a rescan is a few `stat` calls (every 90 s while the app runs; *Settings → Rescan* forces a full re-read).
-- **Catalog** (`core/catalog.py`): plugin JSONs in `wandlike/games/` plus a generated `_index.json` of content hashes are served from this repo. The launcher fetches the index (ETag, so unchanged is a 304) at startup, every few hours, and whenever your game library changes (*Settings → Sync now* does it on demand). For each **installed** game it compares the index hash with the plugin it already has (the bundled copy or a previously downloaded one). If the content differs it downloads the new file, checks the SHA-256 and the strict loader, swaps it in live, refreshes the open game page and shows an *"Updated support for ..."* notice. Uninstalled games are never downloaded. Precedence: your own plugins > downloaded > bundled; a new app version discards downloaded copies and re-pulls only what is newer than what it ships.
-- **Updating a game's plugin needs no version bump and no app release.** Edit `wandlike/games/<id>.json`, commit, push to `main`. A GitHub workflow (`catalog.yml`) regenerates `_index.json` automatically (you can also run `python tools/make_catalog.py`; a test fails locally if the committed index is stale). The `version` field in a plugin is informational and is ignored for update decisions. Use `"min_app": "1.3.0"` only when a plugin uses a feature newer apps added; older apps then skip it politely.
-- The repo must be **public**. Plugins are data, but they type commands into games and write memory, so only merge plugins you trust: the hash protects against corruption, not against a malicious commit.
+```
+hexctl find-games stellaris        # what your libraries contain
+hexctl new-game stellaris          # starter definition
+hexctl validate game.json          # every problem at once, with typo suggestions
+hexctl preview game.json           # what each cheat would do, no game needed
+hexctl aob game.exe "48 8B 0D ?? ?? ?? ??"      # signature scan in a running game
+hexctl read game.exe game.exe+5C7E378,20,8 int32 # check a pointer chain
+hexctl scan game.exe int32 1000                  # first scan from the command line
+hexctl catalog                      # regenerate wandlike/games/_index.json
+```
+
+Your own definitions go in `%APPDATA%\Hexwright\games\` and load immediately.
+
+## Game catalog (definitions update without an app release)
+
+Definitions in `wandlike/games/` plus a generated `_index.json` of SHA-256 content hashes are served from this repo. For each **installed**
+game Hexwright compares the index hash with the definition it has; if the content differs it downloads, verifies and swaps it in live.
+Uninstalled games are never downloaded. To update a definition: edit the file, push to `main`, and the `catalog-index` workflow refreshes the index.
+No version bump, no app release. (The folder keeps its old name so installed 1.x clients keep working.)
 
 ## Building
-Release and debug builds use `build.ps1`, which creates a private `.venv-build` and installs PyInstaller and pywebview into it.
 
-### Release build
-```
-.\build.ps1                  # -> dist\WandLike-Setup.exe
-.\build.ps1 -Version 1.2.3   # also sets the version
-```
-
-### Debug build (for testers and contributors)
-Use this to see a terminal and everything the app is doing when something goes wrong.
-
-**What you need:** Windows 10/11, [Python 3.10+](https://www.python.org/downloads/) on your `PATH` (tick *Add python.exe to PATH*), Git, and the WebView2 runtime (already on Windows 11).
+Needs Windows 10/11 and Visual Studio 2022+ (or Build Tools) with **Desktop development with C++**. CMake and Ninja come with it; all other
+dependencies are vendored in `third_party/` (nlohmann/json, doctest, Dear ImGui, stb_image; licenses in `third_party/licenses/`).
 
 ```
 git clone https://github.com/Tyrannys/WandLike.git
 cd WandLike
-.\build.ps1 -Debug        # or: .\build.ps1 --debug
+.\build.ps1                      # tests + dist\Hexwright-Setup.exe + dist\hexctl.exe
+.\build.ps1 -Version 2.0.1       # also sets the version
+.\build.ps1 -TestOnly            # just build and run the unit tests
 ```
-The first build downloads PyInstaller and pywebview (a minute or two) and writes **`dist\WandLike-Debug.exe`**. Run it **from a terminal** (`.\dist\WandLike-Debug.exe`) so the log stays visible. It is standalone: no installer, it does not touch your installed copy.
 
-If PowerShell refuses to run the script: `powershell -ExecutionPolicy Bypass -File .\build.ps1 -Debug`. To skip building, run from source with `pip install -r requirements.txt` and `python -m wandlike --debug`.
+If PowerShell refuses to run the script: `powershell -ExecutionPolicy Bypass -File .\build.ps1`.
+By hand: `. .\tools\vsenv.ps1; cmake -S . -B build\win -G Ninja -DCMAKE_BUILD_TYPE=Release; cmake --build build\win; build\win\hextests.exe`.
 
-What the debug build adds:
-- A **console window** with a timestamped log of every backend call, engine command, hook/memory write and uncaught exception, also saved to `%APPDATA%\WandLike\debug.log`.
-- A red **DEBUG** pill and a **Debug page** in the sidebar: fake an update, pretend a game is running/closed, throw a test exception, send a raw line to a game's console, and view hook/library info, the log tail and your saved settings.
-- Right-click → **Inspect** (WebView2 devtools).
+### Debug build (for testers and contributors)
 
-**Reporting a problem:** reproduce it in the debug exe, then attach `%APPDATA%\WandLike\debug.log` (and the Debug page's *Environment* box) to the issue.
+```
+.\build.ps1 -Debug               # or: .\build.ps1 --debug   ->   dist\Hexwright-Debug.exe
+```
+Standalone (no installer, doesn't touch an installed copy). Run it **from a terminal**: it shows a console with a timestamped log of every
+hook, memory write, console command, update check and error, also saved to `%APPDATA%\Hexwright\debug.log`. To reproduce a problem, use the
+debug exe and attach `debug.log` to the issue. A normal build can also be started with `--debug` to get the log file.
 
-All debug code lives in `wandlike/debug/` and `wandlike/web/debug.js`. The release build excludes both and `build.ps1` fails if either ends up in the release exe; `--debug` or `WANDLIKE_DEBUG=1` do nothing in a release exe. Put new debug-only code in those two places and it never ships.
+### Tests
+
+`hextests.exe` (doctest) covers every core module: scanner (all scan kinds and types), AOB patterns and chunk edges, the pointer resolver
+(including a real 32-bit process), definitions and validation, the trainer engine, the address table and freezing, hotkeys, the safety
+blocklist, library / catalog / updater with injected network, and authoring helpers.
 
 ## Install, update, release
-`WandLike-Setup.exe` installs per-user:
-```
-%LOCALAPPDATA%\WandLike\WandLike.exe   launcher + uninstaller (same binary as the setup)
-%LOCALAPPDATA%\WandLike\app-X.Y.Z\     one folder per version (current + previous kept)
-```
-It adds Start Menu/Desktop shortcuts and an *Apps & features* entry. Settings live in `%APPDATA%\WandLike` and survive uninstall.
 
-**Auto-update** uses GitHub Releases: pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`, which tests, builds and publishes `WandLike-Setup.exe`. Installed apps check on startup (and when you click the version label), show an *Update & restart* banner, verify the download against GitHub's SHA-256 digest, and install it silently. Version numbers: `+0.1.0` for major changes, `+0.0.1` for minor ones. The exes are unsigned, so SmartScreen may warn on first run.
+`Hexwright-Setup.exe` installs per user:
+
+```
+%LOCALAPPDATA%\Hexwright\Hexwright.exe   launcher + uninstaller (same binary as the setup)
+%LOCALAPPDATA%\Hexwright\app-X.Y.Z\      one folder per version (current + previous kept)
+```
+It adds shortcuts and an *Apps & features* entry. Settings live in `%APPDATA%\Hexwright` and survive uninstall. On first install it
+migrates settings from, and removes, the old WandLike install.
+
+**Auto-update** uses GitHub Releases: pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`, which builds, tests and publishes
+`Hexwright-Setup.exe` (plus a `WandLike-Setup.exe` copy so installed 1.x apps can update across the rewrite). Installed apps check at startup,
+verify the download against GitHub's SHA-256 digest and install it silently. The exes are unsigned, so SmartScreen may warn on first run.
 
 ## Layout
-`wandlike/core/` engine (console + memory), `hook.py` (attach, symbols), `memory.py` (ReadProcessMemory, PE sections, AOB), `library.py`, `catalog.py`, `authoring.py`, `plugin.py` (schema) · `wandlike/app/` Api + window · `wandlike/web/` UI · `wandlike/games/` plugins + `_index.json` · `wandlike/debug/` debug-only · `installer/` · `tools/` (catalog, dev server, RE helpers) · `tests/`.
+
+`src/core` engine (process, memory, scanner, AOB, pointers, definitions, trainer, safety, library, catalog, updater) ·
+`src/app` ImGui interface · `src/setup` installer / launcher · `src/cli` `hexctl` · `tests` unit tests · `wandlike/games` definitions + catalog index ·
+`third_party` vendored libraries · `docs` ([architecture](docs/ARCHITECTURE.md), [plan](docs/PLAN.md), [definition format](docs/TRAINER_FORMAT.md)) ·
+`tools/pe_re.py` optional reverse-engineering helper (Python + capstone).
