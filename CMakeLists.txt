@@ -1,0 +1,78 @@
+cmake_minimum_required(VERSION 3.24)
+
+# The version comes from the command line in release builds (-DHX_VERSION=2.1.0); see build.ps1 and the workflows.
+if(NOT DEFINED HX_VERSION)
+  set(HX_VERSION 2.0.0)
+endif()
+project(Hexwright VERSION ${HX_VERSION} LANGUAGES C CXX RC)
+
+if(NOT WIN32 OR NOT MSVC)
+  message(FATAL_ERROR "Hexwright targets Windows and builds with MSVC (cl).")
+endif()
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")   # static CRT: nothing to redistribute
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+option(HX_DEBUG_BUILD "Debug build: console window, verbose logging, debug page" OFF)
+
+add_compile_definitions(UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS
+                        _WIN32_WINNT=0x0A00 WINVER=0x0A00)
+add_compile_options(/W4 /permissive- /utf-8 /EHsc /Zc:__cplusplus /Zc:preprocessor /MP)
+if(HX_DEBUG_BUILD)
+  add_compile_definitions(HX_DEBUG_BUILD=1)
+endif()
+
+string(REPLACE "." "," HX_VERSION_COMMA "${HX_VERSION}.0")
+configure_file(src/core/version.h.in ${CMAKE_BINARY_DIR}/generated/hx/version.h @ONLY)
+configure_file(src/app/app.rc.in ${CMAKE_BINARY_DIR}/generated/app.rc @ONLY)
+
+# ---------------------------------------------------------------- core library
+file(GLOB HX_CORE_SOURCES CONFIGURE_DEPENDS src/core/*.cpp)
+add_library(hexcore STATIC ${HX_CORE_SOURCES})
+target_include_directories(hexcore PUBLIC src third_party ${CMAKE_BINARY_DIR}/generated)
+target_link_libraries(hexcore PUBLIC winhttp bcrypt advapi32 shell32 ole32 version user32 psapi shlwapi)
+
+# ---------------------------------------------------------------------- tests
+file(GLOB HX_TEST_SOURCES CONFIGURE_DEPENDS tests/*.cpp)
+add_executable(hextests ${HX_TEST_SOURCES})
+target_link_libraries(hextests PRIVATE hexcore)
+enable_testing()
+add_test(NAME unit COMMAND hextests)
+
+# ------------------------------------------------------- CLI (validate, scan...)
+file(GLOB HX_CLI_SOURCES CONFIGURE_DEPENDS src/cli/*.cpp)
+if(HX_CLI_SOURCES)
+  add_executable(hexctl ${HX_CLI_SOURCES})
+  target_link_libraries(hexctl PRIVATE hexcore)
+endif()
+
+# ------------------------------------------------------------------ app (ImGui)
+file(GLOB HX_APP_SOURCES CONFIGURE_DEPENDS src/app/*.cpp)
+if(HX_APP_SOURCES)
+  set(IMGUI_DIR third_party/imgui)
+  add_library(imgui STATIC
+    ${IMGUI_DIR}/imgui.cpp ${IMGUI_DIR}/imgui_draw.cpp ${IMGUI_DIR}/imgui_tables.cpp ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_win32.cpp ${IMGUI_DIR}/backends/imgui_impl_dx11.cpp)
+  target_include_directories(imgui PUBLIC ${IMGUI_DIR} ${IMGUI_DIR}/backends)
+  target_compile_options(imgui PRIVATE /W3)
+  target_link_libraries(imgui PUBLIC d3d11 dxgi d3dcompiler dwmapi)
+
+  if(HX_DEBUG_BUILD)
+    add_executable(hexwright ${HX_APP_SOURCES} ${CMAKE_BINARY_DIR}/generated/app.rc)   # console subsystem: shows the log
+  else()
+    add_executable(hexwright WIN32 ${HX_APP_SOURCES} ${CMAKE_BINARY_DIR}/generated/app.rc)
+  endif()
+  target_link_libraries(hexwright PRIVATE hexcore imgui)
+  set_target_properties(hexwright PROPERTIES OUTPUT_NAME "Hexwright$<$<BOOL:${HX_DEBUG_BUILD}>:-Debug>")
+endif()
+
+# ------------------------------------------------- installer / launcher (setup)
+file(GLOB HX_SETUP_SOURCES CONFIGURE_DEPENDS src/setup/*.cpp)
+if(HX_SETUP_SOURCES)
+  add_executable(hexsetup WIN32 ${HX_SETUP_SOURCES} ${CMAKE_BINARY_DIR}/generated/app.rc)
+  target_link_libraries(hexsetup PRIVATE hexcore)
+  set_target_properties(hexsetup PROPERTIES OUTPUT_NAME "Hexwright-Setup")
+endif()
